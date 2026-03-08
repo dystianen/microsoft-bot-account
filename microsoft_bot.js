@@ -510,9 +510,13 @@ class MicrosoftBot {
     // Wait for checkbox to appear by finding its label text
     try {
       // Find the container based on the agreement text to avoid relying on dynamic IDs/classes
-      const checkboxContainer = this.page.locator('.ms-Checkbox').filter({ hasText: /authorize recurring payments|by checking the box/i });
+      const checkboxContainer = this.page
+        .locator(".ms-Checkbox")
+        .filter({
+          hasText: /authorize recurring payments|by checking the box/i,
+        });
       const checkboxInput = checkboxContainer.locator('input[type="checkbox"]');
-      
+
       await checkboxInput.waitFor({ state: "attached", timeout: 120000 });
 
       const isChecked = await checkboxInput.getAttribute("aria-checked");
@@ -522,7 +526,7 @@ class MicrosoftBot {
         await this.randomMouseMove();
 
         // Try clicking the label inside the matched container
-        const label = checkboxContainer.locator('label');
+        const label = checkboxContainer.locator("label");
         const labelExists = await label.count();
 
         if (labelExists > 0) {
