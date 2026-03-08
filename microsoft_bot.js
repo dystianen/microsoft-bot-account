@@ -346,6 +346,40 @@ class MicrosoftBot {
     await nextBtn.click();
   }
 
+  async handleOptionalSignIn() {
+    console.log("[STEP 11.5] Checking for optional Sign In prompt...");
+
+    try {
+      // Tunggu sebentar untuk lihat apakah button Sign In muncul
+      const signInBtn = this.page.locator('button:has-text("Sign In")');
+      const isVisible = await signInBtn
+        .isVisible({ timeout: 10000 })
+        .catch(() => false);
+
+      if (isVisible) {
+        console.log("Sign In button detected, clicking...");
+        await this.randomMouseMove();
+        await signInBtn.click();
+
+        await this.humanDelay(2000, 4000);
+
+        // Setelah click Sign In, biasanya ada prompt "Stay signed in?"
+        const staySignedInBtn = this.page.locator("#idSIButton9");
+        if (
+          await staySignedInBtn.isVisible({ timeout: 15000 }).catch(() => false)
+        ) {
+          console.log("Stay signed in? prompt detected, clicking Yes...");
+          await this.randomMouseMove();
+          await staySignedInBtn.click();
+        }
+      } else {
+        console.log("No Sign In button detected, proceeding...");
+      }
+    } catch (e) {
+      console.log("Optional Sign In handler skipped or errored:", e.message);
+    }
+  }
+
   async goToPaymentPage() {
     console.log("[STEP 12] Waiting until payment page appears");
 
@@ -408,67 +442,147 @@ class MicrosoftBot {
     await saveBtn.click();
   }
 
+  // async clickStartTrialButton() {
+  //   console.log("[STEP 15] Finalizing - Waiting for trial agreement checkbox...");
+
+  //   // Tunggu sampai checkbox muncul
+  //   try {
+  //     const checkboxLocator = this.page.locator(".ms-Checkbox");
+  //     await checkboxLocator.waitFor({ state: "visible", timeout: 120000 });
+
+  //     const input = checkboxLocator.locator('input[type="checkbox"]');
+  //     const isChecked = await input.isChecked();
+
+  //     if (!isChecked) {
+  //       console.log("Checkbox not checked, clicking label...");
+  //       await this.randomMouseMove();
+
+  //       // Klik label atau container lebih reliable untuk UI Microsoft
+  //       await checkboxLocator.locator("label").click({ force: true });
+
+  //       // Verifikasi apakah sudah ter-check
+  //       await this.page.waitForTimeout(1000);
+  //       if (!(await input.isChecked())) {
+  //           console.log("Still not checked, trying direct input click...");
+  //           await input.click({ force: true });
+  //       }
+
+  //       console.log("Agreement checkbox checked");
+  //     } else {
+  //       console.log("Agreement checkbox is already checked");
+  //     }
+  //   } catch (e) {
+  //     console.warn("Agreement checkbox not found or timeout (120s):", e.message);
+  //   }
+  //   await this.humanDelay(1500, 3000);
+
+  //   console.log("Waiting for Start Trial button...");
+
+  //   const startTrialBtn = this.page.getByRole("button", { name: /Start/i });
+
+  //   await startTrialBtn.waitFor({
+  //     state: "visible",
+  //     timeout: 60000,
+  //   });
+
+  //   // Tunggu sampai button tidak disabled
+  //   await this.page.waitForFunction(
+  //     () => {
+  //       const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+  //         /start/i.test(b.innerText),
+  //       );
+  //       return (
+  //         btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true"
+  //       );
+  //     },
+  //     { timeout: 20000 },
+  //   );
+
+  //   await this.randomMouseMove();
+
+  //   await startTrialBtn.click();
+
+  //   console.log("Start trial button clicked");
+  // }
   async clickStartTrialButton() {
-    console.log("[STEP 15] Finalizing - Waiting for trial agreement checkbox...");
+    console.log("[SAVE] Waiting for checklist checkbox...");
 
-    // Tunggu sampai checkbox muncul
+    // Wait for checkbox to appear by finding its label text
     try {
-      const checkboxLocator = this.page.locator(".ms-Checkbox");
-      await checkboxLocator.waitFor({ state: "visible", timeout: 120000 });
+      // Find the container based on the agreement text to avoid relying on dynamic IDs/classes
+      const checkboxContainer = this.page.locator('.ms-Checkbox').filter({ hasText: /authorize recurring payments|by checking the box/i });
+      const checkboxInput = checkboxContainer.locator('input[type="checkbox"]');
+      
+      await checkboxInput.waitFor({ state: "attached", timeout: 120000 });
 
-      const input = checkboxLocator.locator('input[type="checkbox"]');
-      const isChecked = await input.isChecked();
+      const isChecked = await checkboxInput.getAttribute("aria-checked");
 
-      if (!isChecked) {
-        console.log("Checkbox not checked, clicking label...");
+      if (isChecked !== "true") {
+        console.log("Checkbox not checked, attempting to check...");
         await this.randomMouseMove();
-        
-        // Klik label atau container lebih reliable untuk UI Microsoft
-        await checkboxLocator.locator("label").click({ force: true });
-        
-        // Verifikasi apakah sudah ter-check
-        await this.page.waitForTimeout(1000);
-        if (!(await input.isChecked())) {
-            console.log("Still not checked, trying direct input click...");
-            await input.click({ force: true });
+
+        // Try clicking the label inside the matched container
+        const label = checkboxContainer.locator('label');
+        const labelExists = await label.count();
+
+        if (labelExists > 0) {
+          await label.click({ force: true });
+        } else {
+          await checkboxInput.click({ force: true });
         }
-        
-        console.log("Agreement checkbox checked");
+
+        await this.page.waitForTimeout(1000);
+
+        // Verify checked via aria-checked (Microsoft Fabric uses this, not native checked)
+        const rechecked = await checkboxInput.getAttribute("aria-checked");
+        if (rechecked !== "true") {
+          console.log("Still not checked, trying JS dispatch...");
+          await checkboxInput.evaluate((el) => {
+            if (el) {
+              el.click();
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+        }
+
+        console.log("Checklist checkbox checked");
       } else {
-        console.log("Agreement checkbox is already checked");
+        console.log("Checkbox already checked");
       }
     } catch (e) {
-      console.warn("Agreement checkbox not found or timeout (120s):", e.message);
+      console.warn("Checkbox not found or error:", e.message);
     }
-    await this.humanDelay(1500, 3000);
 
-    console.log("Waiting for Start Trial button...");
+    await this.humanDelay(1000, 2000);
 
-    const startTrialBtn = this.page.getByRole("button", { name: /Start/i });
+    console.log("Waiting for Save/Start Trial button to become enabled...");
 
-    await startTrialBtn.waitFor({
-      state: "visible",
-      timeout: 60000,
-    });
+    // Target the specific disabled button and wait for it to become enabled
+    const saveBtn = this.page
+      .locator("button.ms-Button--primary")
+      .filter({ hasText: /start trial|save/i });
 
-    // Tunggu sampai button tidak disabled
+    await saveBtn.waitFor({ state: "visible", timeout: 30000 });
+
+    // Poll until aria-disabled is removed
     await this.page.waitForFunction(
       () => {
-        const btn = Array.from(document.querySelectorAll("button")).find((b) =>
-          /start/i.test(b.innerText),
-        );
+        const btn = document.querySelector("button.ms-Button--primary");
         return (
-          btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true"
+          btn &&
+          !btn.disabled &&
+          btn.getAttribute("aria-disabled") !== "true" &&
+          !btn.classList.contains("is-disabled")
         );
       },
-      { timeout: 20000 },
+      { timeout: 30000 },
     );
 
     await this.randomMouseMove();
+    await this.humanDelay(500, 1000);
 
-    await startTrialBtn.click();
-
-    console.log("Start trial button clicked");
+    await saveBtn.click({ force: true });
+    console.log("Save/Start Trial button clicked");
   }
 
   async pauseForManualPayment() {
@@ -559,6 +673,10 @@ class MicrosoftBot {
 
       await this.fillPassword();
       if (await this.checkForError()) return;
+      await this.humanDelay(2000, 5000);
+
+      // Cek apakah minta Sign In manual setelah isi password
+      await this.handleOptionalSignIn();
       await this.humanDelay(2000, 5000);
 
       //   await this.waitForManualSteps();
