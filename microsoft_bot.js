@@ -212,20 +212,35 @@ class MicrosoftBot {
     }
     await this.humanDelay(100, 300);
 
-    // Postal code (zip atau postal)
+    // Postal code (optional)
     const postalLocator = this.page
       .locator(
         'input[id*="postal" i], input[id*="zip" i], input[data-testid*="postal" i], input[data-testid*="zip" i]',
       )
       .first();
-    await postalLocator.click();
-    await postalLocator.pressSequentially(
-      this.accountConfig.microsoftAccount.postalCode,
-      {
-        delay: Math.floor(Math.random() * 30) + 50,
-      },
-    );
-    await this.humanDelay(150, 400);
+
+    if (
+      this.accountConfig.microsoftAccount.postalCode &&
+      (await postalLocator.count()) > 0
+    ) {
+      try {
+        await postalLocator.click();
+
+        await postalLocator.pressSequentially(
+          this.accountConfig.microsoftAccount.postalCode,
+          {
+            delay: Math.floor(Math.random() * 30) + 50,
+          },
+        );
+
+        console.log("Postal code filled");
+        await this.humanDelay(150, 400);
+      } catch (err) {
+        console.log("Postal code field found but could not fill, skipping...");
+      }
+    } else {
+      console.log("Postal code not provided or field not found, skipping...");
+    }
 
     // Pilih company size (random)
     await this.selectDropdownByText(
@@ -235,10 +250,27 @@ class MicrosoftBot {
     await this.humanDelay(600, 1200);
 
     // Pilih state Alabama (sesuai config)
-    await this.selectDropdownByText(
-      'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i]',
-      this.accountConfig.microsoftAccount.state || "Alabama",
-    );
+    const regionInput = this.page
+      .locator('input[id*="region" i], input[id*="state" i]')
+      .first();
+
+    if ((await regionInput.count()) > 0) {
+      await regionInput.click();
+
+      await regionInput.pressSequentially(
+        this.accountConfig.microsoftAccount.state || "Alabama",
+        { delay: Math.floor(Math.random() * 30) + 50 },
+      );
+
+      console.log("Region filled as text input");
+    } else {
+      // fallback kalau ternyata dropdown
+      await this.selectDropdownByText(
+        'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i]',
+        this.accountConfig.microsoftAccount.state || "Alabama",
+      );
+    }
+
     await this.humanDelay(600, 1200);
 
     // Pilih No untuk website
@@ -604,54 +636,57 @@ class MicrosoftBot {
   }
 
   async clickStartTrialButton() {
-    console.log("[SAVE] Waiting for checklist checkbox...");
+    console.log("[SAVE] Checking if checklist checkbox exists...");
 
-    // Wait for checkbox to appear by finding its label text
     try {
-      // Find the container based on the agreement text to avoid relying on dynamic IDs/classes
       const checkboxContainer = this.page.locator(".ms-Checkbox").filter({
         hasText: /authorize recurring payments|by checking the box/i,
       });
+
       const checkboxInput = checkboxContainer.locator('input[type="checkbox"]');
 
-      await checkboxInput.waitFor({ state: "attached", timeout: 120000 });
+      const exists = (await checkboxInput.count()) > 0;
 
-      const isChecked = await checkboxInput.getAttribute("aria-checked");
+      if (!exists) {
+        console.log("Checklist checkbox not found, skipping...");
+      } else {
+        console.log("Checklist checkbox found");
 
-      if (isChecked !== "true") {
-        console.log("Checkbox not checked, attempting to check...");
-        await this.randomMouseMove();
+        await checkboxInput.waitFor({ state: "visible", timeout: 10000 });
 
-        // Try clicking the label inside the matched container
-        const label = checkboxContainer.locator("label");
-        const labelExists = await label.count();
+        const isChecked = await checkboxInput.getAttribute("aria-checked");
 
-        if (labelExists > 0) {
-          await label.click({ force: true });
-        } else {
-          await checkboxInput.click({ force: true });
-        }
+        if (isChecked !== "true") {
+          console.log("Checkbox not checked, checking...");
 
-        await this.page.waitForTimeout(1000);
+          await this.randomMouseMove();
 
-        // Verify checked via aria-checked (Microsoft Fabric uses this, not native checked)
-        const rechecked = await checkboxInput.getAttribute("aria-checked");
-        if (rechecked !== "true") {
-          console.log("Still not checked, trying JS dispatch...");
-          await checkboxInput.evaluate((el) => {
-            if (el) {
+          const label = checkboxContainer.locator("label");
+
+          if ((await label.count()) > 0) {
+            await label.click({ force: true });
+          } else {
+            await checkboxInput.click({ force: true });
+          }
+
+          await this.page.waitForTimeout(500);
+
+          const rechecked = await checkboxInput.getAttribute("aria-checked");
+
+          if (rechecked !== "true") {
+            await checkboxInput.evaluate((el) => {
               el.click();
               el.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          });
-        }
+            });
+          }
 
-        console.log("Checklist checkbox checked");
-      } else {
-        console.log("Checkbox already checked");
+          console.log("Checklist checkbox checked");
+        } else {
+          console.log("Checkbox already checked");
+        }
       }
     } catch (e) {
-      console.warn("Checkbox not found or error:", e.message);
+      console.log("Checkbox handling skipped:", e.message);
     }
 
     await this.humanDelay(200, 500);
@@ -854,22 +889,6 @@ class MicrosoftBot {
 
       currentStep = "Saving payment";
       await this.clickSavePaymentButton();
-
-      currentStep = "Waiting for page transition after Sav";
-      console.log("[INFO] Waiting for page transition after Save...");
-      try {
-        await this.page.waitForSelector(
-          '#pidlddc-button-userEnteredButton, input[type="checkbox"]',
-          {
-            state: "visible",
-            timeout: 120000,
-          },
-        );
-      } catch (e) {
-        console.log(
-          "[INFO] Timeout waiting for next step elements, checking manually...",
-        );
-      }
 
       currentStep = "Confirming address (Stage 2)";
       await this.clickUseThisAddressButton();
