@@ -1,19 +1,55 @@
-```markdown
 ## Getting Started
 
+Follow the steps below to set up and run the project.
+
 ### Prerequisites
-1. Download and install **[Node.js](https://nodejs.org/)** (LTS version recommended).
+Make sure you have the following installed on your system:
+
+- **Node.js** (LTS version recommended)  
+  Download from: https://nodejs.org/
+
+You can verify the installation with:
+
+```bash
+node -v
+npm -v
+```
 
 ### Installation
-2. Clone the repository and navigate to the project directory.
+
+1. Clone this repository:
+
+```bash
+git clone <repository-url>
+```
+
+2. Navigate to the project directory:
+
+```bash
+cd <project-folder>
+```
+
 3. Install the required dependencies:
-   ```bash
-   npm install
-   ```
+
+```bash
+npm install
+```
 
 ### Running the Application
-4. Start the development server:
-   ```bash
-   npm run start
-   ```
+
+Start the application:
+
+```bash
+npm start
 ```
+
+or if your project uses a custom script:
+
+```bash
+npm run start
+```
+
+### Notes
+
+- Make sure all environment variables (if required) are configured before running the application.
+- Check the `.env.example` file if available.
