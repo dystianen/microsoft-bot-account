@@ -11,7 +11,7 @@ class MicrosoftBot {
     this.accountConfig = accountConfig; // Store the specific account configuration
   }
 
-  async humanDelay(min = 500, max = 1500) {
+  async humanDelay(min = 100, max = 400) {
     const delay = Math.floor(Math.random() * (max - min + 1) + min);
     await this.page.waitForTimeout(delay);
   }
@@ -125,7 +125,7 @@ class MicrosoftBot {
       delay: Math.floor(Math.random() * 30) + 50,
     });
 
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(100, 300);
   }
 
   async clickCollectEmailNextButton() {
@@ -202,7 +202,7 @@ class MicrosoftBot {
         delay: Math.floor(Math.random() * 30) + 50,
       },
     );
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(100, 300);
 
     // Input City
     const cityLocator = this.getGenericLocator("city");
@@ -210,7 +210,7 @@ class MicrosoftBot {
     for (const char of this.accountConfig.microsoftAccount.city) {
       await this.page.keyboard.type(char, { delay: Math.random() * 50 + 50 });
     }
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(100, 300);
 
     // Postal code (zip atau postal)
     const postalLocator = this.page
@@ -225,7 +225,7 @@ class MicrosoftBot {
         delay: Math.floor(Math.random() * 30) + 50,
       },
     );
-    await this.humanDelay(800, 1500);
+    await this.humanDelay(150, 400);
 
     // Pilih company size (random)
     await this.selectDropdownByText(
@@ -266,7 +266,7 @@ class MicrosoftBot {
       }
     } catch (e) {}
 
-    await this.humanDelay(1000, 2000);
+    await this.humanDelay(200, 500);
 
     // Click Next
     const nextBtn = this.getGenericButton("Next");
@@ -353,7 +353,7 @@ class MicrosoftBot {
       await btn.click();
 
       console.log("[STEP 10.5] Address confirmation button clicked");
-      await this.humanDelay(1000, 2000);
+      await this.humanDelay(200, 500);
     } catch {
       console.log(
         "[STEP 10.5] Address confirmation button not found, skipping...",
@@ -401,7 +401,7 @@ class MicrosoftBot {
       },
     );
 
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(100, 300);
 
     await confirmPasswordLocator.click({ force: true }).catch(() => {});
     await confirmPasswordLocator.pressSequentially(
@@ -411,7 +411,7 @@ class MicrosoftBot {
       },
     );
 
-    await this.humanDelay(1000, 2000);
+    await this.humanDelay(200, 500);
 
     const nextBtn = this.getGenericButton("Next");
     await nextBtn.waitFor({ state: "visible", timeout: 30000 });
@@ -423,36 +423,54 @@ class MicrosoftBot {
     console.log("[STEP 11.5] Checking for optional Sign In prompt...");
 
     try {
-      // Tunggu sebentar untuk lihat apakah button Sign In muncul
+      // Tunggu page load dasar
+      await this.page.waitForLoadState("domcontentloaded");
+
       const signInBtn = this.getGenericButton("Sign In");
-      const isVisible = await signInBtn
-        .isVisible({ timeout: 15000 })
+
+      // Retry hingga 3 kali untuk tombol Sign In
+      let signInDetected = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        signInDetected = await signInBtn
+          .waitFor({ state: "visible", timeout: 5000 })
+          .then(() => true)
+          .catch(() => false);
+
+        if (signInDetected) break;
+
+        console.log(`Sign In button not detected, retry ${attempt}...`);
+        await this.humanDelay(200, 500); // delay sebelum retry
+      }
+
+      if (!signInDetected) {
+        console.log("No Sign In button detected after retries, skipping...");
+        return;
+      }
+
+      console.log("Sign In button detected, clicking...");
+      await this.randomMouseMove();
+      await signInBtn.click();
+      await this.humanDelay(400, 800);
+
+      // Tangani "Stay signed in?" prompt jika muncul
+      const staySignedInBtn = this.page
+        .locator(
+          'button[id*="idSIButton" i], input[id*="idSIButton" i], button[type="submit"], input[type="submit"]',
+        )
+        .first();
+
+      const staySignedInVisible = await staySignedInBtn
+        .waitFor({ state: "visible", timeout: 10000 })
+        .then(() => true)
         .catch(() => false);
 
-      if (isVisible) {
-        console.log("Sign In button detected, clicking...");
+      if (staySignedInVisible) {
+        console.log("Stay signed in prompt detected, clicking...");
         await this.randomMouseMove();
-        await signInBtn.click();
-
-        await this.humanDelay(2000, 4000);
-
-        // Setelah click Sign In, biasanya ada prompt "Stay signed in?"
-        const staySignedInBtn = this.page
-          .locator(
-            'button[id*="idSIButton" i], input[id*="idSIButton" i], button[type="submit"], input[type="submit"]',
-          )
-          .first();
-        if (
-          await staySignedInBtn.isVisible({ timeout: 15000 }).catch(() => false)
-        ) {
-          console.log(
-            "Stay signed in? prompt detected, clicking Yes/Submit...",
-          );
-          await this.randomMouseMove();
-          await staySignedInBtn.click();
-        }
+        await staySignedInBtn.click();
+        await this.humanDelay(200, 500);
       } else {
-        console.log("No Sign In button detected, proceeding...");
+        console.log("No 'Stay signed in?' prompt detected, proceeding...");
       }
     } catch (e) {
       console.log("Optional Sign In handler skipped or errored:", e.message);
@@ -486,7 +504,7 @@ class MicrosoftBot {
     await cardLocator.pressSequentially(this.accountConfig.payment.cardNumber, {
       delay: Math.floor(Math.random() * 30) + 50,
     });
-    await this.humanDelay(800, 1500);
+    await this.humanDelay(150, 400);
 
     // Fill CVV
     console.log("Typing CVV...");
@@ -499,7 +517,7 @@ class MicrosoftBot {
     await cvvLocator.pressSequentially(this.accountConfig.payment.cvv, {
       delay: Math.floor(Math.random() * 30) + 50,
     });
-    await this.humanDelay(800, 1500);
+    await this.humanDelay(150, 400);
 
     // Select Expiry Month
     console.log("Selecting expiry month:", this.accountConfig.payment.expMonth);
@@ -510,7 +528,7 @@ class MicrosoftBot {
       expMonthLocatorString,
       this.accountConfig.payment.expMonth,
     );
-    await this.humanDelay(800, 1500);
+    await this.humanDelay(150, 400);
 
     // Select Expiry Year
     console.log("Selecting expiry year:", this.accountConfig.payment.expYear);
@@ -520,7 +538,7 @@ class MicrosoftBot {
       expYearLocatorString,
       this.accountConfig.payment.expYear,
     );
-    await this.humanDelay(1000, 2000);
+    await this.humanDelay(200, 500);
 
     console.log("VCC details filled");
   }
@@ -531,39 +549,33 @@ class MicrosoftBot {
     const saveBtn = this.page
       .locator('button[data-bi-id*="Save" i], button:has-text("Save")')
       .first();
-
     await saveBtn.waitFor({ state: "visible" });
-
     await this.randomMouseMove();
     await saveBtn.click();
 
     console.log("Waiting for payment validation...");
 
-    const errorMsg = this.page.locator(
-      '[data-automation-id="error-message"], .ms-MessageBar--error',
-    );
-
-    const successIndicator = this.page.locator(
-      '#pidlddc-button-userEnteredButton, input[type="checkbox"]',
-    );
-
+    // Tunggu salah satu: error muncul ATAU navigasi ke halaman berikutnya
     const result = await Promise.race([
-      errorMsg
-        .waitFor({ state: "visible", timeout: 60000 })
+      this.page
+        .waitForSelector('span[data-automation-id="error-message"]', {
+          timeout: 100000,
+        })
         .then(() => "error"),
-      successIndicator
-        .waitFor({ state: "visible", timeout: 60000 })
-        .then(() => "success"),
-      this.page.waitForLoadState("networkidle").then(() => "networkidle"),
+      this.page.waitForNavigation({ timeout: 100000 }).then(() => "success"),
     ]);
 
     if (result === "error") {
-      const text = await errorMsg.first().textContent();
-      throw new Error(`PAYMENT_DECLINED: ${text?.trim()}`);
+      const errorEl = await this.page.$(
+        'span[data-automation-id="error-message"]',
+      );
+      const message = (await errorEl?.textContent())?.trim();
+      throw new Error(`PAYMENT_DECLINED: ${message}`);
     }
 
-    console.log("Payment validation finished:", result);
+    console.log("Payment validation finished, navigated to next page");
   }
+
   async clickStartTrialButton() {
     console.log("[SAVE] Waiting for checklist checkbox...");
 
@@ -615,7 +627,7 @@ class MicrosoftBot {
       console.warn("Checkbox not found or error:", e.message);
     }
 
-    await this.humanDelay(1000, 2000);
+    await this.humanDelay(200, 500);
 
     console.log("Waiting for Save/Start Trial button to become enabled...");
 
@@ -644,7 +656,7 @@ class MicrosoftBot {
     );
 
     await this.randomMouseMove();
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(100, 300);
 
     await saveBtn.click({ force: true });
     console.log("Save/Start Trial button clicked");
@@ -706,15 +718,15 @@ class MicrosoftBot {
       await this.humanDelay(1000, 3000);
       await this.openMicrosoftPage();
       if (await this.checkForError()) return;
-      await this.humanDelay(2000, 5000);
+      await this.humanDelay(400, 800);
 
       await this.clickTryButton();
       if (await this.checkForError()) return;
-      await this.humanDelay(2000, 4000);
+      await this.humanDelay(400, 800);
 
       await this.clickBuildCartNextButton();
       if (await this.checkForError()) return;
-      await this.humanDelay(1500, 3000);
+      await this.humanDelay(300, 600);
 
       await this.fillEmail();
       if (await this.checkForError()) return;
@@ -722,11 +734,11 @@ class MicrosoftBot {
 
       await this.clickCollectEmailNextButton();
       if (await this.checkForError()) return;
-      await this.humanDelay(2000, 4000);
+      await this.humanDelay(400, 800);
 
       await this.clickConfirmEmailSetupAccountButton();
       if (await this.checkForError()) return;
-      await this.humanDelay(2000, 4000);
+      await this.humanDelay(400, 800);
 
       await this.fillBasicInfo();
       if (await this.checkForError()) return;
@@ -734,22 +746,22 @@ class MicrosoftBot {
 
       await this.clickUseThisAddressButton();
       if (await this.checkForError()) return;
-      await this.humanDelay(1500, 3000);
+      await this.humanDelay(300, 600);
 
       await this.fillPassword();
       if (await this.checkForError()) return;
-      await this.humanDelay(2000, 5000);
+      await this.humanDelay(400, 800);
 
       // Cek apakah minta Sign In manual setelah isi password
       await this.handleOptionalSignIn();
-      await this.humanDelay(2000, 5000);
+      await this.humanDelay(400, 800);
 
       //   await this.waitForManualSteps();
       await this.goToPaymentPage();
-      await this.humanDelay(2000, 4000);
+      await this.humanDelay(400, 800);
 
       await this.fillPaymentDetails();
-      await this.humanDelay(2000, 5000);
+      await this.humanDelay(400, 800);
 
       await this.clickSavePaymentButton();
 
@@ -771,11 +783,11 @@ class MicrosoftBot {
 
       // Selalu cek konfirmasi alamat (jika ada)
       await this.clickUseThisAddressButton();
-      await this.humanDelay(1500, 3000);
+      await this.humanDelay(300, 600);
 
       // Terakhir klik Start Trial
       await this.clickStartTrialButton();
-      await this.humanDelay(5000, 10000);
+      await this.humanDelay(800, 1500);
 
       await this.pauseForManualPayment();
 
