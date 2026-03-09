@@ -77,6 +77,27 @@ function writeResultToExcel(rowIndex, status, domainEmail) {
         ];
       }
 
+      ws["!cols"] = [
+        { wch: 35 }, // Email
+        { wch: 35 }, // Password
+        { wch: 15 }, // First Name
+        { wch: 15 }, // Last Name
+        { wch: 30 }, // Company Name
+        { wch: 15 }, // Company Size
+        { wch: 15 }, // Phone
+        { wch: 25 }, // Job Title
+        { wch: 30 }, // Address
+        { wch: 15 }, // City
+        { wch: 15 }, // State
+        { wch: 12 }, // Postal Code
+        { wch: 15 }, // Country
+        { wch: 20 }, // Card Number
+        { wch: 8 }, // CVV
+        { wch: 10 }, // Exp Month
+        { wch: 10 }, // Exp Year
+        { wch: 12 }, // Status
+        { wch: 40 }, // Domain Email
+      ];
       XLSX.writeFile(workbook, EXCEL_FILE);
 
       const excelRow = rowIndex + 2;

@@ -2,6 +2,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 module.exports = {
+  concurrencyLimit: 10,
   microsoftUrl:
     "https://www.microsoft.com/en-us/microsoft-365/business/microsoft-365-business-basic",
   adsPower: {
