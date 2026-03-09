@@ -78,26 +78,6 @@ class MicrosoftBot {
     });
   }
 
-  // async clickTryButton() {
-  //   console.log("[STEP 3] Clicking Try button");
-
-  //   await this.waitForPage("#action-oc5f9e");
-
-  //   // Tangkap new page sebelum click
-  //   const [newPage] = await Promise.all([
-  //     this.context.waitForEvent("page"),
-  //     this.page.evaluate(() => {
-  //       document.querySelector("#action-oc5f9e").click();
-  //     }),
-  //   ]);
-
-  //   // Switch this.page ke tab baru
-  //   await newPage.waitForLoadState("domcontentloaded");
-  //   this.page = newPage;
-
-  //   console.log("[STEP 3] Switched to new page:", this.page.url());
-  // }
-
   async clickBuildCartNextButton() {
     console.log("[STEP 4] Clicking Next button");
 
@@ -490,7 +470,7 @@ class MicrosoftBot {
       let signInDetected = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
         signInDetected = await signInBtn
-          .waitFor({ state: "visible", timeout: 20000 })
+          .waitFor({ state: "visible", timeout: 15000 })
           .then(() => true)
           .catch(() => false);
 
@@ -606,7 +586,6 @@ class MicrosoftBot {
     console.log("[STEP 14] Clicking Save progress button");
 
     const saveBtn = this.getGenericButton("Save");
-
     await saveBtn.waitFor({ state: "visible", timeout: 60000 });
 
     await this.randomMouseMove();
@@ -614,25 +593,55 @@ class MicrosoftBot {
 
     console.log("[INFO] Waiting for payment response...");
 
-    // Tunggu sedikit agar DOM update
-    await this.page.waitForTimeout(3000);
+    const result = await Promise.race([
+      // error payment
+      this.page
+        .waitForSelector('span[data-automation-id="error-message"]', {
+          timeout: 15000,
+        })
+        .then(() => "error")
+        .catch(() => null),
 
-    const useAddressBtn = this.page
-      .locator('button:has-text("Use this address")')
-      .first();
+      // address confirmation
+      this.page
+        .waitForSelector('button:has-text("Use this address")', {
+          timeout: 15000,
+        })
+        .then(() => "address")
+        .catch(() => null),
 
-    const exists = await useAddressBtn.isVisible().catch(() => false);
+      // url berubah
+      this.page
+        .waitForFunction(() => window.location.href.includes("billing"), {
+          timeout: 15000,
+        })
+        .then(() => "success")
+        .catch(() => null),
 
-    if (exists) {
+      // fallback delay
+      this.page.waitForTimeout(8000).then(() => "timeout"),
+    ]);
+
+    if (result === "error") {
+      const message = await this.page
+        .locator('span[data-automation-id="error-message"]')
+        .textContent();
+
+      throw new Error(`PAYMENT_DECLINED: ${message}`);
+    }
+
+    if (result === "address") {
       console.log("[INFO] Address confirmation detected");
+
+      const useAddressBtn = this.page.locator(
+        'button:has-text("Use this address")',
+      );
 
       await this.randomMouseMove();
       await useAddressBtn.click();
-
-      console.log("[INFO] Use this address clicked");
-    } else {
-      console.log("[INFO] No address confirmation needed, skipping...");
     }
+
+    console.log("[INFO] Payment step finished");
   }
 
   async clickStartTrialButton() {
@@ -771,22 +780,28 @@ class MicrosoftBot {
   }
 
   async checkForError() {
-    const hasError = await this.page.evaluate(() => {
-      const text = document.body.innerText;
-      return (
-        text.includes("Something went wrong") ||
-        text.includes("Something happened")
-      );
-    });
+    try {
+      // Periksa apakah teks error ini ada di element apapun di halaman
+      const hasError = await this.page.evaluate(() => {
+        const text = document.body.innerText;
+        return (
+          text.includes("Something went wrong") ||
+          text.includes("Something happened")
+        );
+      });
 
-    if (hasError) {
-      console.log(
-        "[ERROR] Error page detected, closing browser and deleting profile...",
-      );
-      await this.cleanup();
-      return true;
+      if (hasError) {
+        console.log(
+          "[ERROR] Error page detected, closing browser and deleting profile...",
+        );
+
+        await this.cleanup();
+        return true;
+      }
+    } catch (err) {
+      console.log("[INFO] Could not check for error:", err.message);
     }
-
+    
     return false;
   }
 
@@ -824,12 +839,6 @@ class MicrosoftBot {
       if (await this.checkForError())
         throw new Error("Microsoft error page detected during initial load");
       await this.humanDelay(400, 800);
-
-      // currentStep = "Clicking Try button";
-      // await this.clickTryButton();
-      // if (await this.checkForError())
-      //   throw new Error("Microsoft error page detected after Try button");
-      // await this.humanDelay(400, 800);
 
       currentStep = "Building cart";
       await this.clickBuildCartNextButton();
