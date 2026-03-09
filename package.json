@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "generate-excel": "node setup-neat-excel.js"
+    "generate": "node setup_neat_excel.js"
   },
   "keywords": [],
   "author": "",

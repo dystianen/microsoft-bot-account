@@ -2,9 +2,9 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 module.exports = {
-  concurrencyLimit: 10,
+  concurrencyLimit: 5,
   microsoftUrl:
-    "https://www.microsoft.com/en-us/microsoft-365/business/microsoft-365-business-basic",
+    "https://signup.microsoft.com/get-started/signup?products=2ef55228-927f-4abc-ac51-befd4cdcd850&mproducts=CFQ7TTC0LF8S:0009&fmproducts=CFQ7TTC0LF8S:0009&renewalterm=P1Y&renewalbillingterm=P1Y&culture=ph-ph&country=ph&ali=1",
   adsPower: {
     baseUrl: process.env.ADSPOWER_BASE_URL,
     apiKey: process.env.ADSPOWER_API_KEY,

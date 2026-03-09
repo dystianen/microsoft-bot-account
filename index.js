@@ -1,101 +1,55 @@
 const adsPowerHelper = require("./adspower_helper");
 const MicrosoftBot = require("./microsoft_bot");
 const config = require("./config");
+const fs = require("fs");
 const XLSX = require("xlsx");
 
-const EXCEL_FILE = "./accounts.xlsx";
+const EXCEL_FILE = "./accounts_result.xlsx";
 
-// Simple promise-based lock to prevent concurrent Excel writes
-let writeLock = Promise.resolve();
-
-function writeResultToExcel(rowIndex, status, domainEmail, logMessage) {
-  writeLock = writeLock.then(() => {
-    try {
-      const workbook = XLSX.readFile(EXCEL_FILE);
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-
-      // Find column positions from existing headers (row 1)
-      const range = XLSX.utils.decode_range(sheet["!ref"]);
-      let statusCol = -1;
-      let domainCol = -1;
-      let logCol = -1;
-
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-        const cell = sheet[cellRef];
-        if (!cell) continue;
-        const val = String(cell.v).trim().toLowerCase();
-        if (val === "status") statusCol = c;
-        if (val === "domain email") domainCol = c;
-        if (val === "log") logCol = c;
-      }
-
-      if (statusCol === -1 || domainCol === -1) {
-        console.error(
-          '[Excel] Could not find "Status" or "Domain Email" column in header row. Please add them to the Excel template.',
-        );
-        return;
-      }
-
-      // Data row = rowIndex + 1 (0-indexed, row 0 = header)
-      const dataRow = rowIndex + 1;
-
-      // Write the Status, Domain Email and Log cells
-      const statusCellRef = XLSX.utils.encode_cell({
-        r: dataRow,
-        c: statusCol,
-      });
-      const domainCellRef = XLSX.utils.encode_cell({
-        r: dataRow,
-        c: domainCol,
-      });
-
-      sheet[statusCellRef] = { t: "s", v: status };
-      sheet[domainCellRef] = { t: "s", v: domainEmail || "" };
-
-      if (logCol !== -1) {
-        const logCellRef = XLSX.utils.encode_cell({ r: dataRow, c: logCol });
-        sheet[logCellRef] = { t: "s", v: logMessage || "" };
-      }
-
-      ws["!cols"] = [
-        { wch: 35 }, // Email
-        { wch: 35 }, // Password
-        { wch: 15 }, // First Name
-        { wch: 15 }, // Last Name
-        { wch: 30 }, // Company Name
-        { wch: 15 }, // Company Size
-        { wch: 15 }, // Phone
-        { wch: 25 }, // Job Title
-        { wch: 30 }, // Address
-        { wch: 15 }, // City
-        { wch: 15 }, // State
-        { wch: 12 }, // Postal Code
-        { wch: 15 }, // Country
-        { wch: 20 }, // Card Number
-        { wch: 8 }, // CVV
-        { wch: 10 }, // Exp Month
-        { wch: 10 }, // Exp Year
-        { wch: 12 }, // Status
-        { wch: 40 }, // Domain Email
-        { wch: 50 }, // Log
-      ];
-
-      XLSX.writeFile(workbook, EXCEL_FILE);
-
-      const excelRow = rowIndex + 2; // for logging (1-indexed)
-      console.log(
-        `[Excel] Row ${excelRow} updated: Status=${status}, Domain=${domainEmail || "N/A"}, Log=${logMessage || "N/A"}`,
-      );
-    } catch (err) {
-      console.error(
-        `[Excel] Failed to write result for row ${rowIndex + 2}:`,
-        err.message,
-      );
-    }
+function generateExcelReport(accounts, results) {
+  const data = accounts.map((acc, index) => {
+    const res = results[index] || { status: "FAILED", domainEmail: "", domainPassword: "", log: "Incomplete execution" };
+    
+    return {
+      "Email": acc.microsoftAccount.email,
+      "Password": acc.microsoftAccount.password,
+      "First Name": acc.microsoftAccount.firstName,
+      "Last Name": acc.microsoftAccount.lastName,
+      "Company Name": acc.microsoftAccount.companyName,
+      "Company Size": acc.microsoftAccount.companySize || "1 person",
+      "Phone": acc.microsoftAccount.phone,
+      "Job Title": acc.microsoftAccount.jobTitle,
+      "Address": acc.microsoftAccount.address,
+      "City": acc.microsoftAccount.city,
+      "State": acc.microsoftAccount.state,
+      "Postal Code": acc.microsoftAccount.postalCode,
+      "Country": acc.microsoftAccount.country || "United States",
+      "Card Number": acc.payment.cardNumber,
+      "CVV": acc.payment.cvv,
+      "Exp Month": acc.payment.expMonth,
+      "Exp Year": acc.payment.expYear,
+      "Status": res.status,
+      "Domain Email": res.domainEmail || "",
+      "Domain Password": res.domainPassword || "",
+      "Log": res.log || ""
+    };
   });
-  return writeLock;
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Results");
+
+  // Adjust column widths
+  worksheet["!cols"] = [
+    { wch: 40 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 30 },
+    { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 30 }, { wch: 15 },
+    { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 8 },
+    { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 45 }, { wch: 25 }, 
+    { wch: 50 },
+  ];
+
+  XLSX.writeFile(workbook, EXCEL_FILE);
+  console.log(`\n[Excel] Saved results to ${EXCEL_FILE}.`);
 }
 
 async function processSingleAccount(accountConfig, index, total) {
@@ -108,7 +62,7 @@ async function processSingleAccount(accountConfig, index, total) {
   let currentProfileId = null;
   let bot = null;
   let result = null;
-  let resultWritten = false;
+  let executionResult = null;
 
   try {
     // 1. Create AdsPower profile
@@ -127,31 +81,18 @@ async function processSingleAccount(accountConfig, index, total) {
 
     if (result && result.success) {
       console.log(
-        `[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail}`,
+        `[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail} Password: ${accountConfig.microsoftAccount.password}`,
       );
-      await writeResultToExcel(
-        index,
-        "SUCCESS",
-        result.domainEmail,
-        "Completed successfully",
-      );
-      resultWritten = true;
+      executionResult = { status: "SUCCESS", domainEmail: result.domainEmail, domainPassword: accountConfig.microsoftAccount.password, log: "Completed successfully" };
     } else {
       console.error(
         `[Account ${index + 1}] Automation failed: ${result?.error || "Unknown error"}`,
       );
-      await writeResultToExcel(
-        index,
-        "FAILED",
-        "",
-        result?.error || "Unknown automation error",
-      );
-      resultWritten = true;
+      executionResult = { status: "FAILED", domainEmail: "", domainPassword: "", log: result?.error || "Unknown automation error" };
     }
   } catch (err) {
     console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
-    await writeResultToExcel(index, "ERROR", "", err.message);
-    resultWritten = true;
+    executionResult = { status: "ERROR", domainEmail: "", domainPassword: "", log: err.message };
   } finally {
     console.log(`[Account ${index + 1}] Starting cleanup...`);
 
@@ -180,55 +121,28 @@ async function processSingleAccount(accountConfig, index, total) {
       }
     }
 
-    // Safety net: jika sampai cleanup selesai tapi belum ada hasil ditulis ke Excel, tulis FAILED
-    if (!resultWritten) {
-      console.warn(
-        `[Account ${index + 1}] No result was recorded — marking as FAILED in Excel.`,
-      );
-      await writeResultToExcel(index, "FAILED", "", "Incomplete execution");
+    if (!executionResult) {
+      executionResult = { status: "FAILED", domainEmail: "", domainPassword: "", log: "Incomplete execution" };
     }
   }
+  
+  return executionResult;
 }
 
 async function main() {
   try {
-    // Read accounts from Excel file
-    const workbook = XLSX.readFile(EXCEL_FILE);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
-
-    // Map flat Excel rows to nested accountConfig structure
-    const accounts = rows.map((row) => ({
-      microsoftAccount: {
-        email: String(row["Email"] || ""),
-        password: String(row["Password"] || ""),
-        firstName: String(row["First Name"] || ""),
-        lastName: String(row["Last Name"] || ""),
-        companyName: String(row["Company Name"] || ""),
-        companySize: String(row["Company Size"] || "1 person"),
-        phone: String(row["Phone"] || ""),
-        jobTitle: String(row["Job Title"] || ""),
-        address: String(row["Address"] || ""),
-        city: String(row["City"] || ""),
-        state: String(row["State"] || ""),
-        postalCode: String(row["Postal Code"] || ""),
-        country: String(row["Country"] || "United States"),
-      },
-      payment: {
-        cardNumber: String(row["Card Number"] || ""),
-        cvv: String(row["CVV"] || ""),
-        expMonth: String(row["Exp Month"] || ""),
-        expYear: String(row["Exp Year"] || ""),
-      },
-    }));
+    // Read accounts from JSON file
+    const accountsData = fs.readFileSync('./accounts.json', 'utf8');
+    const accounts = JSON.parse(accountsData);
 
     const concurrencyLimit = config.concurrencyLimit || 3;
     console.log(
-      `Loaded ${accounts.length} accounts. Concurrency limit: ${concurrencyLimit}`,
+      `Loaded ${accounts.length} accounts from JSON. Concurrency limit: ${concurrencyLimit}`,
     );
 
     const executing = new Set();
     const tasks = [];
+    const results = new Array(accounts.length);
 
     for (let i = 0; i < accounts.length; i++) {
       const accountConfig = accounts[i];
@@ -237,7 +151,10 @@ async function main() {
         accountConfig,
         i,
         accounts.length,
-      ).then(() => executing.delete(promise));
+      ).then((res) => {
+        results[i] = res; // Store result
+        executing.delete(promise);
+      });
 
       tasks.push(promise);
       executing.add(promise);
@@ -256,6 +173,9 @@ async function main() {
 
     await Promise.all(tasks);
     console.log("\nAll accounts processing attempts finished!");
+
+    // Generate Excel report at the very end
+    generateExcelReport(accounts, results);
   } catch (error) {
     console.error("Fatal execution error:", error.message);
     process.exit(1);

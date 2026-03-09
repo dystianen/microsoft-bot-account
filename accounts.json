@@ -1,0 +1,117 @@
+[
+  {
+    "microsoftAccount": {
+      "email": "santiago.ramirez@manilamedical.ph",
+      "firstName": "Santiago",
+      "lastName": "Ramirez",
+      "companyName": "Manila Medical Center",
+      "companySize": "1 person",
+      "phone": "+63289882345",
+      "jobTitle": "Cardiothoracic Surgeon",
+      "address": "1945 Taft Avenue",
+      "city": "Manila",
+      "state": "Metro Manila",
+      "postalCode": "1004",
+      "country": "Philippines",
+      "password": "MedSantiago2345@Manila"
+    },
+    "payment": {
+      "cardNumber": "4983920022379707",
+      "cvv": "306",
+      "expMonth": "03",
+      "expYear": "29"
+    }
+  },
+  {
+    "microsoftAccount": {
+      "email": "isabella.cruz@cebutech.ph",
+      "firstName": "Isabella",
+      "lastName": "Cruz",
+      "companyName": "Cebu Technology Hub",
+      "companySize": "1 person",
+      "phone": "+63322656789",
+      "jobTitle": "Software Development Manager",
+      "address": "125 Archbishop Reyes Avenue",
+      "city": "Cebu City",
+      "state": "Cebu",
+      "postalCode": "6000",
+      "country": "Philippines",
+      "password": "TechIsabella6789@Cebu"
+    },
+    "payment": {
+      "cardNumber": "4983920020166734",
+      "cvv": "068",
+      "expMonth": "03",
+      "expYear": "29"
+    }
+  },
+  {
+    "microsoftAccount": {
+      "email": "mateo.santos@davaoresearch.ph",
+      "firstName": "Mateo",
+      "lastName": "Santos",
+      "companyName": "Davao Biotech Research Institute",
+      "companySize": "1 person",
+      "phone": "+63823219012",
+      "jobTitle": "Molecular Biologist",
+      "address": "150 University Avenue",
+      "city": "Davao City",
+      "state": "Davao del Sur",
+      "postalCode": "8000",
+      "country": "Philippines",
+      "password": "BioMateo9012@Davao"
+    },
+    "payment": {
+      "cardNumber": "4983920028370205",
+      "cvv": "402",
+      "expMonth": "03",
+      "expYear": "29"
+    }
+  },
+  {
+    "microsoftAccount": {
+      "email": "gabriela.reyes@quezoncityedu.ph",
+      "firstName": "Gabriela",
+      "lastName": "Reyes",
+      "companyName": "Quezon City University",
+      "companySize": "1 person",
+      "phone": "+63287653456",
+      "jobTitle": "Academic Dean",
+      "address": "1101 Commonwealth Avenue",
+      "city": "Quezon City",
+      "state": "Metro Manila",
+      "postalCode": "1105",
+      "country": "Philippines",
+      "password": "EduGabriela3456@QuezonCity"
+    },
+    "payment": {
+      "cardNumber": "4983920026068348",
+      "cvv": "360",
+      "expMonth": "03",
+      "expYear": "29"
+    }
+  },
+  {
+    "microsoftAccount": {
+      "email": "alejandro.villanueva@makatienergy.ph",
+      "firstName": "Alejandro",
+      "lastName": "Villanueva",
+      "companyName": "Makati Energy Solutions",
+      "companySize": "1 person",
+      "phone": "+63288457890",
+      "jobTitle": "Renewable Energy Engineer",
+      "address": "122 Ayala Avenue",
+      "city": "Makati",
+      "state": "Metro Manila",
+      "postalCode": "1226",
+      "country": "Philippines",
+      "password": "EnergyAlejandro7890@Makati"
+    },
+    "payment": {
+      "cardNumber": "4983920027661729",
+      "cvv": "135",
+      "expMonth": "03",
+      "expYear": "29"
+    }
+  }
+]

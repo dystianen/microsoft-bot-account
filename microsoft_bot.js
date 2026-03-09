@@ -48,7 +48,7 @@ class MicrosoftBot {
       // Tunggu elemen spesifik muncul = page sudah siap
       await this.page.waitForSelector(selector, {
         state: "attached",
-        timeout: 120000,
+        timeout: 150000,
       });
     } else {
       await this.page.waitForLoadState("domcontentloaded", { timeout: 150000 });
@@ -78,25 +78,25 @@ class MicrosoftBot {
     });
   }
 
-  async clickTryButton() {
-    console.log("[STEP 3] Clicking Try button");
+  // async clickTryButton() {
+  //   console.log("[STEP 3] Clicking Try button");
 
-    await this.waitForPage("#action-oc5f9e");
+  //   await this.waitForPage("#action-oc5f9e");
 
-    // Tangkap new page sebelum click
-    const [newPage] = await Promise.all([
-      this.context.waitForEvent("page"),
-      this.page.evaluate(() => {
-        document.querySelector("#action-oc5f9e").click();
-      }),
-    ]);
+  //   // Tangkap new page sebelum click
+  //   const [newPage] = await Promise.all([
+  //     this.context.waitForEvent("page"),
+  //     this.page.evaluate(() => {
+  //       document.querySelector("#action-oc5f9e").click();
+  //     }),
+  //   ]);
 
-    // Switch this.page ke tab baru
-    await newPage.waitForLoadState("domcontentloaded");
-    this.page = newPage;
+  //   // Switch this.page ke tab baru
+  //   await newPage.waitForLoadState("domcontentloaded");
+  //   this.page = newPage;
 
-    console.log("[STEP 3] Switched to new page:", this.page.url());
-  }
+  //   console.log("[STEP 3] Switched to new page:", this.page.url());
+  // }
 
   async clickBuildCartNextButton() {
     console.log("[STEP 4] Clicking Next button");
@@ -250,21 +250,51 @@ class MicrosoftBot {
 
     // Check partner checkbox
     try {
-      // Cari container label yang di dalamnya ada input checkbox partner
-      const partnerLabel = this.page
-        .locator(
-          'label:has(input[type="checkbox"][id*="partner" i]), label:has(input[type="checkbox"][id*="promo" i]), label[for*="partner" i]',
-        )
-        .first();
-      if ((await partnerLabel.count()) > 0) {
-        const input = partnerLabel.locator('input[type="checkbox"]');
-        const isChecked = await input.isChecked();
+      console.log("Checking partner checkbox...");
+
+      // Selector utama (paling stabil)
+      let partnerCheckbox = this.page.locator("#partner-checkbox");
+
+      // fallback jika id berubah
+      if ((await partnerCheckbox.count()) === 0) {
+        partnerCheckbox = this.page.locator(
+          'input[type="checkbox"][aria-label*="share my information" i]',
+        );
+      }
+
+      // fallback kedua
+      if ((await partnerCheckbox.count()) === 0) {
+        partnerCheckbox = this.page
+          .locator('input[type="checkbox"]')
+          .filter({ hasText: /partner|privacy/i })
+          .first();
+      }
+
+      if ((await partnerCheckbox.count()) > 0) {
+        await partnerCheckbox.waitFor({
+          state: "visible",
+          timeout: 10000,
+        });
+
+        const isChecked = await partnerCheckbox.isChecked();
+
         if (!isChecked) {
           await this.randomMouseMove();
-          await partnerLabel.click();
+
+          await partnerCheckbox.check({
+            force: true,
+          });
+
+          console.log("Partner checkbox checked");
+        } else {
+          console.log("Partner checkbox already checked");
         }
+      } else {
+        console.log("Partner checkbox not found, skipping...");
       }
-    } catch (e) {}
+    } catch (err) {
+      console.log("Checkbox error:", err.message);
+    }
 
     await this.humanDelay(200, 500);
 
@@ -342,11 +372,7 @@ class MicrosoftBot {
     console.log("[STEP 10] Checking for address confirmation button...");
 
     try {
-      const btn = this.page
-        .locator(
-          'button[id*="addressUse" i], button[id*="userEntered" i], button:has-text("Use this address")',
-        )
-        .first();
+      const btn = this.getGenericButton("Use this address");
       await btn.waitFor({ state: "visible", timeout: 15000 });
 
       await this.randomMouseMove();
@@ -432,7 +458,7 @@ class MicrosoftBot {
       let signInDetected = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
         signInDetected = await signInBtn
-          .waitFor({ state: "visible", timeout: 5000 })
+          .waitFor({ state: "visible", timeout: 20000 })
           .then(() => true)
           .catch(() => false);
 
@@ -520,14 +546,15 @@ class MicrosoftBot {
     await this.humanDelay(150, 400);
 
     // Select Expiry Month
-    console.log("Selecting expiry month:", this.accountConfig.payment.expMonth);
+    let expMonth = this.accountConfig.payment.expMonth.toString();
+    if (expMonth.length === 1) {
+      expMonth = "0" + expMonth;
+    }
+    console.log("Selecting expiry month:", expMonth);
     // Untuk dropdown, cari custom selector atau fallback
     const expMonthLocatorString =
       'div[role="combobox"][id*="month" i], div[role="combobox"][data-testid*="month" i], select[id*="month" i]';
-    await this.selectDropdownByText(
-      expMonthLocatorString,
-      this.accountConfig.payment.expMonth,
-    );
+    await this.selectDropdownByText(expMonthLocatorString, expMonth);
     await this.humanDelay(150, 400);
 
     // Select Expiry Year
@@ -546,34 +573,34 @@ class MicrosoftBot {
   async clickSavePaymentButton() {
     console.log("[STEP 14] Clicking Save progress button");
 
-    const saveBtn = this.page
-      .locator('button[data-bi-id*="Save" i], button:has-text("Save")')
-      .first();
-    await saveBtn.waitFor({ state: "visible" });
+    const saveBtn = this.getGenericButton("Save");
+
+    await saveBtn.waitFor({ state: "visible", timeout: 60000 });
+
     await this.randomMouseMove();
     await saveBtn.click();
 
-    console.log("Waiting for payment validation...");
+    console.log("[INFO] Waiting for payment response...");
 
-    // Tunggu salah satu: error muncul ATAU navigasi ke halaman berikutnya
-    const result = await Promise.race([
-      this.page
-        .waitForSelector('span[data-automation-id="error-message"]', {
-          timeout: 100000,
-        })
-        .then(() => "error"),
-      this.page.waitForNavigation({ timeout: 100000 }).then(() => "success"),
-    ]);
+    // Tunggu sedikit agar DOM update
+    await this.page.waitForTimeout(3000);
 
-    if (result === "error") {
-      const errorEl = await this.page.$(
-        'span[data-automation-id="error-message"]',
-      );
-      const message = (await errorEl?.textContent())?.trim();
-      throw new Error(`PAYMENT_DECLINED: ${message}`);
+    const useAddressBtn = this.page
+      .locator('button:has-text("Use this address")')
+      .first();
+
+    const exists = await useAddressBtn.isVisible().catch(() => false);
+
+    if (exists) {
+      console.log("[INFO] Address confirmation detected");
+
+      await this.randomMouseMove();
+      await useAddressBtn.click();
+
+      console.log("[INFO] Use this address clicked");
+    } else {
+      console.log("[INFO] No address confirmation needed, skipping...");
     }
-
-    console.log("Payment validation finished, navigated to next page");
   }
 
   async clickStartTrialButton() {
@@ -671,7 +698,9 @@ class MicrosoftBot {
     await this.humanDelay(300, 600);
     await nextBtn.click();
 
-    console.log("[STEP 15] Next button clicked, waiting for confirmation page...");
+    console.log(
+      "[STEP 15] Next button clicked, waiting for confirmation page...",
+    );
     await this.waitForPage();
   }
 
@@ -680,47 +709,30 @@ class MicrosoftBot {
 
     await this.humanDelay(2000, 4000);
 
-    // Try to find span containing onmicrosoft.com email
-    const emailSpan = this.page
-      .locator("span")
-      .filter({ hasText: /@.*\.onmicrosoft\.com/i })
-      .first();
+    const emailLocator = this.page.locator("#displayName");
 
-    const found = await emailSpan
+    const found = await emailLocator
       .waitFor({ state: "visible", timeout: 30000 })
       .then(() => true)
       .catch(() => false);
 
-    if (found) {
-      const rawText = await emailSpan.textContent();
-      // Extract just the email from the text content
-      const emailMatch = rawText.match(/[\w.+-]+@[\w.-]+\.onmicrosoft\.com/i);
-      const domainEmail = emailMatch ? emailMatch[0].trim() : rawText.trim();
-      console.log("[STEP 16] Domain email found:", domainEmail);
-      return domainEmail;
+    if (!found) {
+      console.warn("[STEP 16] displayName not found");
+      return { domainEmail: "", domainPassword: "" };
     }
 
-    // Fallback: try any span with email pattern
-    const fallbackSpan = this.page
-      .locator("span")
-      .filter({ hasText: /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i })
-      .first();
+    const rawText = (await emailLocator.textContent())?.trim() || "";
 
-    const fallbackFound = await fallbackSpan
-      .waitFor({ state: "visible", timeout: 10000 })
-      .then(() => true)
-      .catch(() => false);
+    const emailMatch = rawText.match(/[\w.+-]+@[\w.-]+\.onmicrosoft\.com/i);
+    const domainEmail = emailMatch ? emailMatch[0] : rawText;
 
-    if (fallbackFound) {
-      const rawText = await fallbackSpan.textContent();
-      const emailMatch = rawText.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
-      const domainEmail = emailMatch ? emailMatch[0].trim() : rawText.trim();
-      console.log("[STEP 16] Domain email found (fallback):", domainEmail);
-      return domainEmail;
-    }
+    // ambil sebelum .onmicrosoft.com
+    const domainPassword = domainEmail.replace(/\.onmicrosoft\.com$/i, "");
 
-    console.warn("[STEP 16] Could not find domain email on the page");
-    return "";
+    console.log("[STEP 16] Domain email:", domainEmail);
+    console.log("[STEP 16] Extracted password:", domainPassword);
+
+    return { domainEmail, domainPassword };
   }
 
   async checkForError() {
@@ -774,47 +786,58 @@ class MicrosoftBot {
 
       currentStep = "Opening Microsoft page";
       await this.openMicrosoftPage();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected during initial load");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected during initial load");
       await this.humanDelay(400, 800);
 
-      currentStep = "Clicking Try button";
-      await this.clickTryButton();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after Try button");
-      await this.humanDelay(400, 800);
+      // currentStep = "Clicking Try button";
+      // await this.clickTryButton();
+      // if (await this.checkForError())
+      //   throw new Error("Microsoft error page detected after Try button");
+      // await this.humanDelay(400, 800);
 
       currentStep = "Building cart";
       await this.clickBuildCartNextButton();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected during building cart");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected during building cart");
       await this.humanDelay(300, 600);
 
       currentStep = "Filling email";
       await this.fillEmail();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after filling email");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected after filling email");
       await this.humanDelay(1000, 2500);
 
       currentStep = "Confirming email email";
       await this.clickCollectEmailNextButton();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after confirming email");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected after confirming email");
       await this.humanDelay(400, 800);
 
       currentStep = "Setup account button";
       await this.clickConfirmEmailSetupAccountButton();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after setup button");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected after setup button");
       await this.humanDelay(400, 800);
 
       currentStep = "Filling basic info";
       await this.fillBasicInfo();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after basic info");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected after basic info");
       await this.humanDelay(1500, 3500);
 
       currentStep = "Confirming address (Stage 1)";
       await this.clickUseThisAddressButton();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after address confirmation");
+      if (await this.checkForError())
+        throw new Error(
+          "Microsoft error page detected after address confirmation",
+        );
       await this.humanDelay(300, 600);
 
       currentStep = "Filling password";
       await this.fillPassword();
-      if (await this.checkForError()) throw new Error("Microsoft error page detected after filling password");
+      if (await this.checkForError())
+        throw new Error("Microsoft error page detected after filling password");
       await this.humanDelay(400, 800);
 
       currentStep = "Handling manual sign in (if any)";
@@ -861,16 +884,17 @@ class MicrosoftBot {
       await this.humanDelay(800, 1500);
 
       currentStep = "Extracting domain email";
-      const domainEmail = await this.extractDomainEmail();
+      const { domainEmail, domainPassword } = await this.extractDomainEmail();
 
       console.log("Automation completed safely");
-      return { success: true, domainEmail };
+      return { success: true, domainEmail, domainPassword };
     } catch (error) {
       console.error(`Automation error at step [${currentStep}]:`, error);
-      return { 
-        success: false, 
-        domainEmail: "", 
-        error: `Step: ${currentStep} - Error: ${error.message}` 
+      return {
+        success: false,
+        domainEmail: "",
+        domainPassword: "",
+        error: `Step: ${currentStep} - Error: ${error.message}`,
       };
     }
   }
