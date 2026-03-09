@@ -15,27 +15,38 @@ function writeResultToExcel(rowIndex, status, domainEmail) {
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
 
-      // Ensure new column headers exist (row 1 in Excel)
-      sheet['R1'] = { t: 's', v: 'Status' };
-      sheet['S1'] = { t: 's', v: 'Domain Email' };
-
-      // Data row = rowIndex + 2 (1-indexed, row 1 = header)
-      const excelRow = rowIndex + 2;
-      sheet[`R${excelRow}`] = { t: 's', v: status };
-      sheet[`S${excelRow}`] = { t: 's', v: domainEmail || '' };
-
-      // Expand sheet range to include new columns
+      // Find column positions from existing headers (row 1)
       const range = XLSX.utils.decode_range(sheet['!ref']);
-      if (range.e.c < 18) range.e.c = 18; // Column S = index 18
-      sheet['!ref'] = XLSX.utils.encode_range(range);
+      let statusCol = -1;
+      let domainCol = -1;
 
-      // Add column widths for new columns
-      if (!sheet['!cols']) sheet['!cols'] = [];
-      while (sheet['!cols'].length < 19) sheet['!cols'].push({});
-      sheet['!cols'][17] = { wch: 12 }; // Status
-      sheet['!cols'][18] = { wch: 40 }; // Domain Email
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+        const cell = sheet[cellRef];
+        if (!cell) continue;
+        const val = String(cell.v).trim().toLowerCase();
+        if (val === 'status') statusCol = c;
+        if (val === 'domain email') domainCol = c;
+      }
+
+      if (statusCol === -1 || domainCol === -1) {
+        console.error('[Excel] Could not find "Status" or "Domain Email" column in header row. Please add them to the Excel template.');
+        return;
+      }
+
+      // Data row = rowIndex + 1 (0-indexed, row 0 = header)
+      const dataRow = rowIndex + 1;
+
+      // Write only the Status and Domain Email cells
+      const statusCellRef = XLSX.utils.encode_cell({ r: dataRow, c: statusCol });
+      const domainCellRef = XLSX.utils.encode_cell({ r: dataRow, c: domainCol });
+
+      sheet[statusCellRef] = { t: 's', v: status };
+      sheet[domainCellRef] = { t: 's', v: domainEmail || '' };
 
       XLSX.writeFile(workbook, EXCEL_FILE);
+
+      const excelRow = rowIndex + 2; // for logging (1-indexed)
       console.log(`[Excel] Row ${excelRow} updated: Status=${status}, Domain=${domainEmail || 'N/A'}`);
     } catch (err) {
       console.error(`[Excel] Failed to write result for row ${rowIndex + 2}:`, err.message);
@@ -52,6 +63,7 @@ async function processSingleAccount(accountConfig, index, total) {
   let currentProfileId = null;
   let bot = null;
   let result = null;
+  let resultWritten = false;
 
   try {
     // 1. Create AdsPower profile
@@ -71,14 +83,17 @@ async function processSingleAccount(accountConfig, index, total) {
     if (result && result.success) {
       console.log(`[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail}`);
       await writeResultToExcel(index, 'SUCCESS', result.domainEmail);
+      resultWritten = true;
     } else {
       console.error(`[Account ${index + 1}] Automation failed: ${result?.error || 'Unknown error'}`);
       await writeResultToExcel(index, 'FAILED', '');
+      resultWritten = true;
     }
     
   } catch (err) {
     console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
     await writeResultToExcel(index, 'ERROR', '');
+    resultWritten = true;
   } finally {
     console.log(`[Account ${index + 1}] Starting cleanup...`);
     
@@ -102,6 +117,12 @@ async function processSingleAccount(accountConfig, index, total) {
       } catch (cleanupError) {
         console.error(`[Account ${index + 1}] AdsPower cleanup error:`, cleanupError.message);
       }
+    }
+
+    // Safety net: jika sampai cleanup selesai tapi belum ada hasil ditulis ke Excel, tulis FAILED
+    if (!resultWritten) {
+      console.warn(`[Account ${index + 1}] No result was recorded — marking as FAILED in Excel.`);
+      await writeResultToExcel(index, 'FAILED', '');
     }
   }
 }
