@@ -121,6 +121,30 @@ class AdsPowerHelper {
       console.error("Error stopping browser:", error.message);
     }
   }
+
+  async deleteProfile(profileId) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/api/v1/user/delete`,
+        {
+          user_ids: [profileId],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${config.adsPower.apiKey}`,
+            "api-key": config.adsPower.apiKey,
+          },
+        }
+      );
+
+      if (response.data.code !== 0) {
+        throw new Error(`Failed to delete profile: ${response.data.msg}`);
+      }
+      console.log(`Profile ${profileId} deleted successfully.`);
+    } catch (error) {
+      console.error(`Error deleting profile ${profileId}:`, error.message);
+    }
+  }
 }
 
 module.exports = new AdsPowerHelper();
