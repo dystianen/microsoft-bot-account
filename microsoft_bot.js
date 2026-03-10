@@ -138,10 +138,7 @@ class MicrosoftBot {
     console.log("[STEP 8] Filling basic info");
 
     // Tunggu field first name / nama awal muncul
-    await this.getGenericLocator("first").waitFor({
-      state: "visible",
-      timeout: 30000,
-    });
+    await this.waitWithCheck(this.getGenericLocator("first"), 30000);
 
     // Fill semua text fields secara human-like
     const fields = [
@@ -471,7 +468,9 @@ class MicrosoftBot {
       for (let attempt = 1; attempt <= 3; attempt++) {
         // Check for error page before each attempt
         if (await this.checkForError()) {
-            throw new Error("MICROSOFT_ERROR_PAGE: Terdeteksi saat pengecekan Sign In.");
+          throw new Error(
+            "MICROSOFT_ERROR_PAGE: Terdeteksi saat pengecekan Sign In.",
+          );
         }
 
         signInDetected = await signInBtn
@@ -856,22 +855,39 @@ class MicrosoftBot {
 
   // Fungsi baru untuk menunggu elemen sambil memantau error page
   async waitWithCheck(locator, timeout = 60000) {
-    return Promise.race([
-      locator.waitFor({ state: "visible", timeout }),
-      new Promise(async (_, reject) => {
-        const start = Date.now();
-        while (Date.now() - start < timeout) {
+    let isFinished = false;
+
+    const checkErrorLoop = async () => {
+      const start = Date.now();
+      while (!isFinished && Date.now() - start < timeout) {
+        try {
+          if (this.page.isClosed()) break;
           if (await this.checkForError()) {
-            return reject(
-              new Error(
-                "MICROSOFT_ERROR_PAGE: Halaman error Microsoft terdeteksi (Something happened).",
-              ),
+            throw new Error(
+              "MICROSOFT_ERROR_PAGE: Halaman error Microsoft terdeteksi (Something happened).",
             );
           }
-          await this.page.waitForTimeout(2000); // Cek setiap 2 detik
+          // Use a basic delay to avoid Playwright's page-dependent waiters if possible
+          // or at least catch the close error
+          if (!isFinished) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        } catch (e) {
+          if (e.message.includes("closed") || e.message.includes("Target page"))
+            break;
+          throw e;
         }
-      }),
-    ]);
+      }
+    };
+
+    try {
+      return await Promise.race([
+        locator.waitFor({ state: "visible", timeout }),
+        checkErrorLoop(),
+      ]);
+    } finally {
+      isFinished = true;
+    }
   }
 
   async cleanup() {
@@ -955,22 +971,26 @@ class MicrosoftBot {
 
       currentStep = "Handling manual sign in (if any)";
       await this.handleOptionalSignIn();
-      if (await this.checkForError()) throw new Error("MICROSOFT_ERROR_PAGE: Sign In page error");
+      if (await this.checkForError())
+        throw new Error("MICROSOFT_ERROR_PAGE: Sign In page error");
       await this.humanDelay(400, 800);
 
       currentStep = "Going to payment page";
       await this.goToPaymentPage();
-      if (await this.checkForError()) throw new Error("MICROSOFT_ERROR_PAGE: Payment page navigation error");
+      if (await this.checkForError())
+        throw new Error("MICROSOFT_ERROR_PAGE: Payment page navigation error");
       await this.humanDelay(400, 800);
 
       currentStep = "Filling VCC payment details";
       await this.fillPaymentDetails();
-      if (await this.checkForError()) throw new Error("MICROSOFT_ERROR_PAGE: Detail payment error");
+      if (await this.checkForError())
+        throw new Error("MICROSOFT_ERROR_PAGE: Detail payment error");
       await this.humanDelay(400, 800);
 
       currentStep = "Saving payment";
       await this.clickSavePaymentButton();
-      if (await this.checkForError()) throw new Error("MICROSOFT_ERROR_PAGE: Save payment error");
+      if (await this.checkForError())
+        throw new Error("MICROSOFT_ERROR_PAGE: Save payment error");
 
       currentStep = "Confirming address (Stage 2)";
       await this.clickUseThisAddressButton();
