@@ -405,33 +405,27 @@ class MicrosoftBot {
   }
 
   async selectRandomDropdown(selector) {
-    // Open dropdown
     const dropdown = this.page.locator(selector).first();
+
     await dropdown.waitFor({ state: "visible", timeout: 15000 });
     await this.randomMouseMove();
     await dropdown.click({ force: true });
 
-    // Tunggu options muncul
-    await this.page.waitForSelector(".ms-Dropdown-items", {
-      state: "attached",
-      timeout: 10000,
-    });
+    // tunggu options muncul
+    const options = this.page
+      .locator('[role="option"]')
+      .filter({ hasNot: this.page.locator(".is-disabled") });
 
-    // Pilih random option (skip index 0 karena biasanya placeholder)
-    await this.page.evaluate((sel) => {
-      const dropdown = document.querySelector(sel);
-      const options =
-        dropdown
-          .closest(".ms-Dropdown-container")
-          ?.querySelectorAll(".ms-Dropdown-item") ||
-        document.querySelectorAll(".ms-Dropdown-items .ms-Dropdown-item");
+    await options.first().waitFor({ timeout: 10000 });
 
-      const validOptions = Array.from(options).filter(
-        (o) => !o.classList.contains("is-disabled"),
-      );
-      const randomIndex = Math.floor(Math.random() * validOptions.length);
-      validOptions[randomIndex]?.click();
-    }, selector);
+    const count = await options.count();
+
+    if (count === 0) throw new Error("No dropdown options found");
+
+    // skip index 0 (biasanya placeholder)
+    const randomIndex = Math.floor(Math.random() * (count - 1)) + 1;
+
+    await options.nth(randomIndex).click();
   }
 
   async selectDropdownByText(selector, text) {
