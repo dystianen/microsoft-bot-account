@@ -17,4 +17,8 @@ module.exports = {
     password: process.env.PROXY_PASSWORD,
     type: "socks5",
   },
+  maxAccountsPerPayment: 5, // Maximum number of Microsoft accounts per payment method
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN,
+  },
 };

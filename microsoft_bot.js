@@ -112,7 +112,7 @@ class MicrosoftBot {
     console.log("[STEP 6] Clicking CollectEmail Next button");
 
     const nextBtn = this.getGenericButton("Next");
-    await nextBtn.waitFor({ state: "visible", timeout: 60000 });
+    await this.waitWithCheck(nextBtn, 60000);
     await this.randomMouseMove();
     await nextBtn.click();
 
@@ -121,16 +121,17 @@ class MicrosoftBot {
 
     // Tunggu button Setup muncul
     const setupBtn = this.getGenericButton("Setup");
-    await setupBtn.waitFor({ state: "visible", timeout: 150000 });
+    await this.waitWithCheck(setupBtn, 150000);
     console.log("[INFO] Verification complete, setup account button detected");
   }
 
   async clickConfirmEmailSetupAccountButton() {
     console.log("[STEP 7] Clicking Setup Account button");
 
-    const setupBtn = this.getGenericButton("Setup");
+    const nextBtn = this.getGenericButton("Next");
+    await this.waitWithCheck(nextBtn, 60000);
     await this.randomMouseMove();
-    await setupBtn.click();
+    await nextBtn.click();
   }
 
   async fillBasicInfo() {
@@ -359,13 +360,14 @@ class MicrosoftBot {
     });
 
     // Pilih option by text (partial match supported for month/year formats)
-    await this.page.evaluate((text) => {
+    await this.page.evaluate((textToSelect) => {
       const options = document.querySelectorAll(
         ".ms-Dropdown-items .ms-Dropdown-item",
       );
       const target = Array.from(options).find((o) => {
+        if (!o || !o.textContent) return false;
         const itemText = o.textContent.trim().toLowerCase();
-        const search = text.toString().toLowerCase();
+        const search = (textToSelect || "").toString().toLowerCase();
         return itemText === search || itemText.startsWith(search);
       });
       if (target) target.click();
@@ -520,7 +522,10 @@ class MicrosoftBot {
 
     await this.page
       .locator("text=Add payment method")
-      .waitFor({ timeout: 100000 });
+      .waitFor({ timeout: 100000 }).catch(async () => {
+         if (await this.checkForError()) throw new Error("MICROSOFT_ERROR_PAGE: Terdeteksi saat menunggu halaman pembayaran.");
+         throw new Error("Timeout waiting for payment page");
+      });
 
     console.log("Payment page detected");
   }
@@ -725,25 +730,58 @@ class MicrosoftBot {
       },
       { timeout: 30000 },
     );
+    // Wait for any potential spinner or overlay to disappear
+    console.log("Waiting for loading spinner to disappear...");
+    await this.page.waitForSelector('[data-testid="spinner"], .ms-Spinner, .css-100', { state: 'detached', timeout: 60000 }).catch(() => {
+      console.log("Spinner didn't appear or didn't disappear, attempting proceed...");
+    });
+
+    // Final check for button status and click
+    await this.page.waitForFunction(
+      () => {
+        const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+          /start trial|save/i.test(b.textContent),
+        );
+        return (
+          btn &&
+          !btn.disabled &&
+          btn.getAttribute("aria-disabled") !== "true" &&
+          !btn.classList.contains("is-disabled")
+        );
+      },
+      { timeout: 30000 },
+    );
 
     await this.randomMouseMove();
-    await this.humanDelay(100, 300);
+    await this.humanDelay(500, 1000);
 
-    await saveBtn.click({ force: true });
-    console.log("Save/Start Trial button clicked");
+    try {
+        // Try normal click first
+        await saveBtn.click({ timeout: 10000 });
+    } catch (e) {
+        console.log("Normal click failed or blocked, using injection click...");
+        // If normal click is blocked by spinner or detaches, use evaluate to click
+        await saveBtn.evaluate(el => el.click());
+    }
+    
+    console.log("Save/Start Trial button clicked, waiting for next step...");
+    await this.page.waitForLoadState("networkidle").catch(() => {});
   }
 
   async clickPostTrialNextButton() {
-    console.log("[STEP 15] Clicking Next button after Start Trial");
+    console.log("[STEP 15] Clicking final Next/Get Started button after Trial");
 
-    const nextBtn = this.getGenericButton("Next");
-    await nextBtn.waitFor({ state: "visible", timeout: 120000 });
+    // This button might have different text (Next, Get Started, Done)
+    const nextBtn = this.page.locator('button:has-text("Next"), button:has-text("Get Started"), button:has-text("Done"), .ms-Button--primary').filter({ state: 'visible' }).first();
+    
+    // Wait for the final button to appear
+    await nextBtn.waitFor({ state: "visible", timeout: 150000 });
     await this.randomMouseMove();
     await this.humanDelay(300, 600);
     await nextBtn.click();
 
     console.log(
-      "[STEP 15] Next button clicked, waiting for confirmation page...",
+      "[STEP 15] Final button clicked, waiting for confirmation page...",
     );
     await this.waitForPage();
   }
@@ -782,27 +820,45 @@ class MicrosoftBot {
   async checkForError() {
     try {
       // Periksa apakah teks error ini ada di element apapun di halaman
-      const hasError = await this.page.evaluate(() => {
+      const errorData = await this.page.evaluate(() => {
         const text = document.body.innerText;
-        return (
+        const hasError = 
           text.includes("Something went wrong") ||
-          text.includes("Something happened")
-        );
+          text.includes("Something happened") ||
+          text.includes("Error Code:") ||
+          text.includes("715-123280");
+          
+        return {
+          hasError,
+          text: text.substring(0, 500) // Ambil sedikit cuplikan untuk log
+        };
       });
 
-      if (hasError) {
-        console.log(
-          "[ERROR] Error page detected, closing browser and deleting profile...",
-        );
-
-        await this.cleanup();
+      if (errorData.hasError) {
+        console.log("[ERROR] Microsoft error page detected immediately.");
         return true;
       }
     } catch (err) {
-      console.log("[INFO] Could not check for error:", err.message);
+      // Jika page sudah tertutup atau crash, anggap saja tidak ada error yang bisa dicek
     }
     
     return false;
+  }
+
+  // Fungsi baru untuk menunggu elemen sambil memantau error page
+  async waitWithCheck(locator, timeout = 60000) {
+    return Promise.race([
+      locator.waitFor({ state: "visible", timeout }),
+      new Promise(async (_, reject) => {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+          if (await this.checkForError()) {
+            return reject(new Error("MICROSOFT_ERROR_PAGE: Halaman error Microsoft terdeteksi (Something happened)."));
+          }
+          await this.page.waitForTimeout(2000); // Cek setiap 2 detik
+        }
+      })
+    ]);
   }
 
   async cleanup() {

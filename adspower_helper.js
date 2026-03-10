@@ -3,7 +3,7 @@ const config = require("./config");
 
 class AdsPowerHelper {
   constructor() {
-    this.baseUrl = config.adsPower.baseUrl;
+    this.baseUrl = (config.adsPower.baseUrl || "").replace(/\/+$/, "");
   }
 
   randomInt(min, max) {
@@ -74,6 +74,23 @@ class AdsPowerHelper {
       console.error("Error creating AdsPower profile:", error.message);
       throw error;
     }
+  }
+
+  // Helper function to select an option in a dropdown by its text content
+  async selectDropdownByText(page, text) {
+    // Pilih option by text (partial match supported for month/year formats)
+    await page.evaluate((textToSelect) => {
+      const options = document.querySelectorAll(
+        ".ms-Dropdown-items .ms-Dropdown-item",
+      );
+      const target = Array.from(options).find((o) => {
+        if (!o || !o.textContent) return false; // Added null check for o.textContent
+        const itemText = o.textContent.trim().toLowerCase();
+        const search = (textToSelect || "").toString().toLowerCase();
+        return itemText === search || itemText.startsWith(search);
+      });
+      if (target) target.click();
+    }, text);
   }
 
   async startBrowser(profileId) {

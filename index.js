@@ -52,6 +52,42 @@ function generateExcelReport(accounts, results) {
   console.log(`\n[Excel] Saved results to ${EXCEL_FILE}.`);
 }
 
+function loadAccounts() {
+  const paymentsFile = './payments.json';
+  const accountsFile = './microsoft_accounts.json';
+
+  if (!fs.existsSync(paymentsFile) || !fs.existsSync(accountsFile)) {
+    throw new Error('Required files (payments.json or microsoft_accounts.json) are missing.');
+  }
+
+  const payments = JSON.parse(fs.readFileSync(paymentsFile, 'utf8'));
+  const microsoftAccounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8'));
+  const maxPerPayment = config.maxAccountsPerPayment || 5;
+
+  console.log(`[Load] Found ${payments.length} payment methods and ${microsoftAccounts.length} Microsoft accounts.`);
+  console.log(`[Load] Max accounts per payment: ${maxPerPayment}`);
+
+  const pairedAccounts = [];
+
+  microsoftAccounts.forEach((msAcc, index) => {
+    // Calculate which payment to use
+    const paymentIndex = Math.floor(index / maxPerPayment);
+    
+    if (paymentIndex >= payments.length) {
+      console.warn(`[Warning] No payment method available for account ${index + 1} (${msAcc.email}). Skipping.`);
+      return;
+    }
+
+    pairedAccounts.push({
+      microsoftAccount: msAcc,
+      payment: payments[paymentIndex]
+    });
+  });
+
+  console.log(`[Load] Paired ${pairedAccounts.length} accounts for processing.`);
+  return pairedAccounts;
+}
+
 async function processSingleAccount(accountConfig, index, total) {
   const profileName = `MS-Account-${Date.now()}-${index}`;
 
@@ -131,13 +167,12 @@ async function processSingleAccount(accountConfig, index, total) {
 
 async function main() {
   try {
-    // Read accounts from JSON file
-    const accountsData = fs.readFileSync('./accounts.json', 'utf8');
-    const accounts = JSON.parse(accountsData);
+    // Load paired accounts
+    const accounts = loadAccounts();
 
     const concurrencyLimit = config.concurrencyLimit || 3;
     console.log(
-      `Loaded ${accounts.length} accounts from JSON. Concurrency limit: ${concurrencyLimit}`,
+      `Loaded ${accounts.length} paired accounts. Concurrency limit: ${concurrencyLimit}`,
     );
 
     const executing = new Set();
@@ -182,4 +217,12 @@ async function main() {
   }
 }
 
-main();
+module.exports = {
+  processSingleAccount,
+  generateExcelReport,
+  loadAccounts
+};
+
+if (require.main === module) {
+  main();
+}
