@@ -683,19 +683,30 @@ class MicrosoftBot {
   }
 
   async clickStartTrialButton() {
+    console.log("[SAVE] Waiting for loading to finish before checking checkbox...");
+    
+    // Wait for any spinner to disappear
+    await this.page.waitForSelector('[data-testid="spinner"], .css-100, .ms-Spinner', { state: 'detached', timeout: 30000 }).catch(() => {
+        console.log("No spinner detected or timeout during wait, proceeding...");
+    });
+
     console.log("[SAVE] Checking if checklist checkbox exists...");
 
     try {
+      // Tunggu sebentar agar DOM stabil setelah spinner hilang
+      await this.humanDelay(1000, 2000);
+
       const checkboxContainer = this.page.locator(".ms-Checkbox").filter({
         hasText: /authorize recurring payments|by checking the box/i,
       });
 
+      // Gunakan wait jika container ini memang diharapkan muncul sesaat setelah spinner hilang
+      const found = await checkboxContainer.waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
+
       const checkboxInput = checkboxContainer.locator('input[type="checkbox"]');
 
-      if ((await checkboxInput.count()) > 0) {
+      if (found && (await checkboxInput.count()) > 0) {
         console.log("Checklist checkbox found");
-
-        await checkboxInput.waitFor({ state: "visible", timeout: 10000 });
 
         const isChecked = await checkboxInput.getAttribute("aria-checked");
 
