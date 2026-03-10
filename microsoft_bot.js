@@ -406,20 +406,42 @@ class MicrosoftBot {
   async clickUseThisAddressButton() {
     console.log("[STEP 10] Checking for address confirmation button...");
 
-    try {
-      const btn = this.getGenericButton("Use this address");
-      await btn.waitFor({ state: "visible", timeout: 15000 });
+    const possibleNames = [
+      "Use this address",
+      "Use address",
+      "Gunakan alamat ini",
+    ];
 
-      await this.randomMouseMove();
-      await btn.click();
+    for (const name of possibleNames) {
+      try {
+        const btn = this.getGenericButton(name);
+        await btn.waitFor({ state: "visible", timeout: 3000 });
 
-      console.log("[STEP 10.5] Address confirmation button clicked");
-      await this.humanDelay(200, 500);
-    } catch {
-      console.log(
-        "[STEP 10.5] Address confirmation button not found, skipping...",
-      );
+        // Jika bahasa Indonesia → pilih radio pertama
+        if (name === "Gunakan alamat ini") {
+          console.log(
+            "[STEP 10.1] Indonesian detected, selecting first address",
+          );
+
+          const firstRadio = this.page.locator('input[type="radio"]').first();
+          await firstRadio.click();
+          await this.humanDelay(200, 400);
+        }
+
+        await this.randomMouseMove();
+        await btn.click();
+
+        console.log(`[STEP 10.5] Clicked button: ${name}`);
+        await this.humanDelay(200, 500);
+        return;
+      } catch {
+        // lanjut ke nama berikutnya
+      }
     }
+
+    console.log(
+      "[STEP 10.5] Address confirmation button not found, skipping...",
+    );
   }
 
   async waitForDomainSuggestion() {
@@ -766,7 +788,7 @@ class MicrosoftBot {
 
     // 1. Tunggu spinner hilang (max 90s)
     await this.page
-      .waitForSelector(spinnerSelector, { state: "detached", timeout: 100000 })
+      .waitForSelector(spinnerSelector, { state: "detached", timeout: 200000 })
       .catch(() => {
         console.log(
           "Spinner is taking too long or not found, attempting to proceed...",
