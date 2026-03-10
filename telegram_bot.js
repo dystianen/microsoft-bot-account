@@ -34,6 +34,7 @@ bot.onText(/\/start/, (msg) => {
     accounts: [],
     payments: [],
     step: "IDLE",
+    running: false,
   };
 
   bot.sendMessage(
@@ -151,129 +152,136 @@ bot.onText(/\/generate|🚀 Generate/, async (msg) => {
     `Starting automation for ${session.accounts.length} accounts...`,
   );
 
-  const maxPerPayment = config.maxAccountsPerPayment || 3;
-  const paired = [];
-  const paymentUsage = session.payments.map(() => 0);
-
-  // Round-robin distribution
-  session.accounts.forEach((acc, index) => {
-    let startIdx = index % session.payments.length;
-    for (let i = 0; i < session.payments.length; i++) {
-      const pIndex = (startIdx + i) % session.payments.length;
-      if (paymentUsage[pIndex] < maxPerPayment) {
-        paired.push({
-          microsoftAccount: acc,
-          payment: session.payments[pIndex],
-        });
-        paymentUsage[pIndex]++;
-        break;
-      }
-    }
-  });
-
-  if (paired.length === 0) {
+  if (session.running) {
     return bot.sendMessage(
       chatId,
-      "No accounts could be paired with payments.",
+      "ℹ️ Automation is already running. Your current queue is being processed. You can see the status by adding more accounts or checking history.",
     );
   }
 
-  session.running = true; // Kunci proses
+  if (session.accounts.length === 0 || session.payments.length === 0) {
+    return bot.sendMessage(
+      chatId,
+      "Please add at least one account and one payment method first.",
+    );
+  }
+
+  session.running = true;
   const batchSize = config.concurrencyLimit || 2;
+  const maxPerPayment = config.maxAccountsPerPayment || 3;
   
+  // Track usage for this specific run session
+  const paymentUsage = session.payments.map(() => 0);
+  let processedCount = 0;
+  let totalToProcess = session.accounts.length;
+
   bot.sendMessage(
     chatId,
-    `Paired ${paired.length} accounts. Running in batches of ${batchSize} (VCC Safety Mode)...`,
+    `🚀 Starting Queue: Processing ${totalToProcess} accounts with ${batchSize} workers (Round-robin VCC mode)...`,
     mainMenu,
   );
 
-  try {
-    for (let i = 0; i < paired.length; i += batchSize) {
-      const batch = paired.slice(i, i + batchSize);
-      const batchPromises = [];
+  const runQueue = async () => {
+    try {
+      const workers = [];
+      
+      const worker = async () => {
+        while (session.accounts.length > 0) {
+          // Find the next account that can be paired
+          let account = null;
+          let payment = null;
+          let accountIndex = -1;
 
-      for (let j = 0; j < batch.length; j++) {
-        const account = batch[j];
-        const globalIndex = i + j;
+          // Round-robin pairing: try to find an account and a payment that hasn't hit the limit
+          for (let i = 0; i < session.accounts.length; i++) {
+            const acc = session.accounts[i];
+            const pIdxBase = (processedCount + i) % session.payments.length;
+            
+            // Look for a payment with capacity
+            for (let pOffset = 0; pOffset < session.payments.length; pOffset++) {
+              const pIdx = (pIdxBase + pOffset) % session.payments.length;
+              if (paymentUsage[pIdx] < maxPerPayment) {
+                account = acc;
+                payment = session.payments[pIdx];
+                accountIndex = i;
+                paymentUsage[pIdx]++;
+                break;
+              }
+            }
+            if (account) break;
+          }
 
-        const taskPromise = (async () => {
+          if (!account) {
+            console.log("No more accounts can be paired with available payments.");
+            break; 
+          }
+
+          // Remove account from queue as we start processing it
+          session.accounts.splice(accountIndex, 1);
+          processedCount++;
+          const currentCount = processedCount;
+
           bot.sendMessage(
             chatId,
-            `Starting [${globalIndex + 1}/${paired.length}]: ${account.microsoftAccount.email}...`,
+            `⏳ [${currentCount}] Starting: ${account.email}...`,
           );
 
           try {
-            const result = await processSingleAccount(
-              account,
-              globalIndex,
-              paired.length,
-            );
+            const pairedData = { microsoftAccount: account, payment: payment };
+            const result = await processSingleAccount(pairedData, currentCount - 1, 999); // total 999 as placeholder
 
-            // If domain email is missing, mark as FAILED
             if (result.status === "SUCCESS" && !result.domainEmail) {
               result.status = "FAILED";
               result.log = "Confirmation page loaded but Domain Email not found.";
             }
 
             let statusEmoji = result.status === "SUCCESS" ? "✅" : "❌";
-
-            // Escape special HTML characters from log
             const safeLog = (result.log || "Unknown error")
               .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
               .replace(/>/g, "&gt;")
-              .substring(0, 1000);
+              .substring(0, 500);
 
-            let message = `${statusEmoji} <b>Result for ${account.microsoftAccount.email}</b>\n\n`;
+            let message = `${statusEmoji} <b>Result [${currentCount}] for ${account.email}</b>\n`;
             message += `<b>Status:</b> ${result.status}\n`;
 
             if (result.status === "SUCCESS") {
-              message += `<b>Domain Email:</b> <code>${result.domainEmail}</code>\n`;
-              message += `<b>Domain Password:</b> <code>${result.domainPassword}</code>\n`;
+              message += `<b>Domain:</b> <code>${result.domainEmail}</code>\n`;
+              message += `<b>Pass:</b> <code>${result.domainPassword}</code>\n`;
             } else {
               message += `<b>Log:</b> ${safeLog}\n`;
             }
 
-            await bot
-              .sendMessage(chatId, message, { parse_mode: "HTML" })
-              .catch((e) => {
-                return bot.sendMessage(
-                  chatId,
-                  `❌ Result for ${account.microsoftAccount.email}\nStatus: ${result.status}\nError: ${safeLog.substring(0, 200)}`,
-                );
-              });
+            await bot.sendMessage(chatId, message, { parse_mode: "HTML" }).catch(() => {
+                bot.sendMessage(chatId, `${statusEmoji} Result [${currentCount}] for ${account.email}: ${result.status}`);
+            });
           } catch (err) {
-            bot.sendMessage(
-              chatId,
-              `❌ System Error for ${account.microsoftAccount.email}: ${err.message.substring(0, 200)}`,
-            );
+            bot.sendMessage(chatId, `❌ Worker Error for ${account.email}: ${err.message}`);
           }
-        })();
-
-        batchPromises.push(taskPromise);
-
-        if (j < batch.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          
+          // Optional stagger delay before a worker picks up the next task
+          await new Promise(r => setTimeout(r, 2000));
         }
+      };
+
+      // Start workers
+      for (let w = 0; w < batchSize; w++) {
+        workers.push(worker());
+        // Stagger worker starts
+        if (w < batchSize - 1) await new Promise(r => setTimeout(r, 5000));
       }
 
-      await Promise.all(batchPromises);
-
-      if (i + batchSize < paired.length) {
-        bot.sendMessage(
-          chatId,
-          `Batch finished. Waiting for next batch to start...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
+      await Promise.all(workers);
+    } catch (fatal) {
+      console.error("Queue Fatal Error:", fatal);
+      bot.sendMessage(chatId, `⚠️ Queue Error: ${fatal.message}`);
+    } finally {
+      session.running = false;
+      bot.sendMessage(chatId, "🏁 Queue finished! All possible accounts have been processed.", mainMenu);
     }
-  } finally {
-    session.running = false; // Buka kunci proses
-    // Hapus akun yang sudah diproses dari antrean
-    session.accounts = session.accounts.slice(paired.length);
-  }
+  };
 
-  bot.sendMessage(chatId, "🏁 All tasks finished!", mainMenu);
+  runQueue(); // Run in background
 });
 
 bot.on("message", (msg) => {
