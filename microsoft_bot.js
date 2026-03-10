@@ -332,10 +332,18 @@ class MicrosoftBot {
     await this.humanDelay(600, 1200);
 
     // Pilih No untuk website
-    await this.selectDropdownByText(
-      'div[role="combobox"][id*="website" i], div[role="combobox"][data-testid*="website" i], select[id*="website" i]',
-      "No",
-    );
+    const possibleTexts = ["No", "Tidak", "Tidak ada"];
+
+    for (const text of possibleTexts) {
+      try {
+        await this.selectDropdownByText(
+          'div[role="combobox"][id*="website" i], div[role="combobox"][data-testid*="website" i], select[id*="website" i]',
+          text,
+        );
+        console.log(`Website dropdown selected: ${text}`);
+        break;
+      } catch {}
+    }
     await this.humanDelay(600, 1200);
 
     // Check partner checkbox
