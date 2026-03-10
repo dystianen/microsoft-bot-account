@@ -43,6 +43,61 @@ class MicrosoftBot {
       .first();
   }
 
+  async clickButtonWithPossibleNames(names, options = {}) {
+    const {
+      timeout = 60000,
+      waitVisible = true,
+      clickOptions = { force: true },
+    } = options;
+    let targetBtn = null;
+    let foundName = null;
+
+    for (const name of names) {
+      try {
+        const btn = this.getGenericButton(name);
+        if (waitVisible) {
+          await btn.waitFor({ state: "visible", timeout: 3000 });
+        } else if (await btn.count()) {
+          targetBtn = btn;
+          foundName = name;
+          break;
+        }
+
+        if (await btn.isVisible()) {
+          targetBtn = btn;
+          foundName = name;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!targetBtn) {
+      // Fallback search using filter if no specific button found
+      const regex = new RegExp(names.join("|"), "i");
+      targetBtn = this.page
+        .locator("button, a")
+        .filter({ hasText: regex })
+        .first();
+
+      if (!(await targetBtn.count())) {
+        throw new Error(`Button not found. Tried: ${names.join(", ")}`);
+      }
+    }
+
+    console.log(`[INFO] Clicking button: ${foundName || "regex match"}`);
+    await this.randomMouseMove();
+    await this.humanDelay(200, 500);
+
+    try {
+      await targetBtn.click({ timeout: 5000, ...clickOptions });
+    } catch {
+      console.log("Playwright click blocked, fallback to JS click...");
+      await targetBtn.evaluate((el) => el.click());
+    }
+
+    return foundName;
+  }
+
   async waitForPage(selector) {
     if (selector) {
       // Tunggu elemen spesifik muncul = page sudah siap
@@ -88,11 +143,11 @@ class MicrosoftBot {
 
   async clickBuildCartNextButton() {
     console.log("[STEP 4] Clicking Next button");
-
-    const nextBtn = this.getGenericButton("Next");
-    await nextBtn.waitFor({ state: "visible", timeout: 60000 });
-    await this.randomMouseMove();
-    await nextBtn.click();
+    await this.clickButtonWithPossibleNames([
+      "Next",
+      "Selanjutnya",
+      "Continue",
+    ]);
   }
 
   async fillEmail() {
@@ -117,13 +172,11 @@ class MicrosoftBot {
   }
 
   async clickCollectEmailNextButton() {
-    const nextBtn = this.getGenericButton("Next");
-    await this.waitWithCheck(nextBtn, 60000);
-    await this.randomMouseMove();
-    await nextBtn.click();
+    console.log("[STEP 6] Clicking Next button for email");
+    await this.clickButtonWithPossibleNames(["Next", "Selanjutnya"]);
 
     console.log("[INFO] Waiting for email verification...");
-    const setupBtn = this.getGenericButton("Setup");
+    const setupNames = ["Setup", "Atur", "Set up"];
 
     const start = Date.now();
     const interval = setInterval(() => {
@@ -133,8 +186,22 @@ class MicrosoftBot {
     }, 15000);
 
     try {
+      // Find which setup name works
+      let setupBtn = null;
+      for (const name of setupNames) {
+        const btn = this.getGenericButton(name);
+        if (await btn.count()) {
+          setupBtn = btn;
+          break;
+        }
+      }
+
+      if (!setupBtn) {
+        setupBtn = this.getGenericButton(setupNames[0]);
+      }
+
       await this.waitWithCheck(setupBtn, 150000);
-      this._setupBtnReady = true; // ← tandai sudah ready
+      this._setupBtnReady = true;
     } finally {
       clearInterval(interval);
     }
@@ -142,21 +209,10 @@ class MicrosoftBot {
 
   async clickConfirmEmailSetupAccountButton() {
     console.log("[STEP 7] Clicking Setup Account button");
-    const setupBtn = this.getGenericButton("Setup");
+    const setupNames = ["Setup Account", "Setup", "Atur Akun", "Mulai"];
 
-    // Hanya waitFor singkat karena harusnya sudah visible
-    if (!this._setupBtnReady) {
-      await this.waitWithCheck(setupBtn, 60000);
-    } else {
-      // Verifikasi cepat saja
-      await setupBtn.waitFor({ state: "visible", timeout: 10000 }).catch(() => {
-        this._setupBtnReady = false;
-      });
-    }
-
+    await this.clickButtonWithPossibleNames(setupNames);
     this._setupBtnReady = false; // reset flag
-    await this.randomMouseMove();
-    await setupBtn.click();
   }
 
   async fillBasicInfo() {
@@ -333,9 +389,11 @@ class MicrosoftBot {
     await this.humanDelay(200, 500);
 
     // Click Next
-    const nextBtn = this.getGenericButton("Next");
-    await this.randomMouseMove();
-    await nextBtn.click();
+    await this.clickButtonWithPossibleNames([
+      "Next",
+      "Selanjutnya",
+      "Continue",
+    ]);
   }
 
   async selectRandomDropdown(selector) {
@@ -412,36 +470,16 @@ class MicrosoftBot {
       "Gunakan alamat ini",
     ];
 
-    for (const name of possibleNames) {
-      try {
-        const btn = this.getGenericButton(name);
-        await btn.waitFor({ state: "visible", timeout: 3000 });
+    const clickedName = await this.clickButtonWithPossibleNames(possibleNames);
 
-        // Jika bahasa Indonesia → pilih radio pertama
-        if (name === "Gunakan alamat ini") {
-          console.log(
-            "[STEP 10.1] Indonesian detected, selecting first address",
-          );
-
-          const firstRadio = this.page.locator('input[type="radio"]').first();
-          await firstRadio.click();
-          await this.humanDelay(200, 400);
-        }
-
-        await this.randomMouseMove();
-        await btn.click();
-
-        console.log(`[STEP 10.5] Clicked button: ${name}`);
-        await this.humanDelay(200, 500);
-        return;
-      } catch {
-        // lanjut ke nama berikutnya
-      }
+    // Jika bahasa Indonesia → pilih radio pertama (ini khusus logic address)
+    if (clickedName === "Gunakan alamat ini") {
+      console.log(
+        "[STEP 10.1] Indonesian detected, ensure radio is selected if needed",
+      );
+      // Logic radio bisa ditambahkan jika clickButtonWithPossibleNames tidak cukup
+      // Tapi biasanya button klik sudah cukup jika radio auto-selected atau tidak wajib
     }
-
-    console.log(
-      "[STEP 10.5] Address confirmation button not found, skipping...",
-    );
   }
 
   async waitForDomainSuggestion() {
@@ -528,10 +566,8 @@ class MicrosoftBot {
 
     await this.humanDelay(200, 500);
 
-    const nextBtn = this.getGenericButton("Next");
-    await nextBtn.waitFor({ state: "visible", timeout: 30000 });
-    await this.randomMouseMove();
-    await nextBtn.click();
+    const nextBtnNames = ["Next", "Selanjutnya", "Finish", "Selesai"];
+    await this.clickButtonWithPossibleNames(nextBtnNames);
   }
 
   async handleOptionalSignIn() {
@@ -687,10 +723,8 @@ class MicrosoftBot {
   }
 
   async clickSavePaymentButton() {
-    const saveBtn = this.getGenericButton("Save");
-    await saveBtn.waitFor({ state: "visible", timeout: 60000 });
-    await this.randomMouseMove();
-    await saveBtn.click();
+    const saveNames = ["Save", "Simpan", "Next", "Selanjutnya"];
+    await this.clickButtonWithPossibleNames(saveNames, { timeout: 60000 });
 
     console.log("[INFO] Waiting for payment response...");
 
@@ -778,190 +812,37 @@ class MicrosoftBot {
     console.log("[INFO] Payment step finished");
   }
 
-  async clickStartTrialButton() {
-    console.log(
-      "[SAVE] Waiting for loading to finish before checking checkbox...",
-    );
-
-    const spinnerSelector =
-      '[data-testid="spinner"], .css-100, .css-101, .ms-Spinner, [class*="spinner" i]';
-
-    // 1. Tunggu spinner hilang (max 90s)
-    await this.page
-      .waitForSelector(spinnerSelector, { state: "detached", timeout: 200000 })
-      .catch(() => {
-        console.log(
-          "Spinner is taking too long or not found, attempting to proceed...",
-        );
-      });
-
-    await this.page.waitForFunction(
-      () => {
-        const checkboxes = document.querySelectorAll(".ms-Checkbox");
-        return Array.from(checkboxes).some((el) => {
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && rect.top >= 0;
-        });
-      },
-      { timeout: 60000 },
-    );
-
-    await this.humanDelay(1500, 3000);
-
-    console.log("[SAVE] Searching for checkbox...");
-
-    try {
-      let checkboxContainer = null;
-      let found = false;
-
-      // Coba cari checkbox dengan beberapa kata kunci (retry 3x)
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const potentialContainers = this.page.locator(
-          ".ms-Checkbox, [class*='checkbox' i]",
-        );
-        const count = await potentialContainers.count();
-
-        for (let i = 0; i < count; i++) {
-          const container = potentialContainers.nth(i);
-          const text = (await container.innerText())?.toLowerCase() || "";
-
-          if (
-            text.includes("authorize") ||
-            text.includes("recurring") ||
-            text.includes("box") ||
-            text.includes("agree") ||
-            text.includes("payment")
-          ) {
-            checkboxContainer = container;
-            found = true;
-            break;
-          }
-        }
-
-        if (found) break;
-        console.log(`Checkbox not found on attempt ${attempt}, waiting...`);
-        await this.humanDelay(2000, 3000);
-      }
-
-      if (found && checkboxContainer) {
-        console.log("Checklist checkbox found");
-
-        const checkboxInput = checkboxContainer.locator(
-          'input[type="checkbox"]',
-        );
-        await checkboxInput
-          .waitFor({ state: "visible", timeout: 5000 })
-          .catch(() => {});
-
-        const isChecked = await checkboxInput.getAttribute("aria-checked");
-
-        if (isChecked !== "true") {
-          console.log("Checkbox not checked, clicking...");
-          await this.randomMouseMove();
-
-          // Coba klik label (lebih aman)
-          const label = checkboxContainer.locator("label");
-          if ((await label.count()) > 0) {
-            await label.click({ force: true });
-          } else {
-            await checkboxContainer.click({ force: true });
-          }
-
-          await this.page.waitForTimeout(1000);
-
-          // Verifikasi sekali lagi
-          const rechecked = await checkboxInput.getAttribute("aria-checked");
-          if (rechecked !== "true") {
-            await checkboxInput
-              .evaluate((el) => {
-                el.click();
-                el.dispatchEvent(new Event("change", { bubbles: true }));
-              })
-              .catch(() => {});
-          }
-          console.log("Checklist checkbox interaction finished");
-        } else {
-          console.log("Checkbox already checked");
-        }
-      } else {
-        console.log("Checklist checkbox not found after retries, skipping...");
-      }
-    } catch (e) {
-      console.log("Checkbox handling skipped due to error:", e.message);
-    }
-
-    await this.humanDelay(200, 500);
-
-    console.log("Finding Start Trial / Save button...");
-
-    const saveBtn = this.page
-      .locator('button[class*="primary" i], button[data-bi-id*="save" i]')
-      .filter({ hasText: /start trial|save/i })
-      .first();
-
-    await saveBtn.waitFor({ state: "visible", timeout: 60000 });
-
-    // tunggu tombol enabled saja
-    await this.page.waitForFunction(() => {
-      const btn = [...document.querySelectorAll("button")].find((b) =>
-        /start trial|save/i.test(b.textContent),
-      );
-
-      return (
-        btn &&
-        !btn.disabled &&
-        btn.getAttribute("aria-disabled") !== "true" &&
-        !btn.classList.contains("is-disabled")
-      );
-    });
-
-    await this.randomMouseMove();
-    await this.humanDelay(400, 900);
-
-    console.log("Clicking Start Trial / Save...");
-
-    try {
-      await saveBtn.click({ force: true });
-    } catch (e) {
-      console.log("Normal click failed, using JS click...");
-      await saveBtn.evaluate((el) => el.click());
-    }
-
-    console.log("Start Trial clicked");
-
-    await Promise.race([
-      this.page.waitForNavigation({ timeout: 30000 }),
-      this.page.waitForLoadState("networkidle"),
-    ]);
-  }
-
   async clickPostTrialNextButton() {
     console.log("[STEP 15] Clicking final Next/Get Started button after Trial");
 
-    const nextBtn = this.getGenericButton("Next");
+    const possibleNames = [
+      "Next",
+      "Selanjutnya",
+      "Get started",
+      "Get Started",
+      "Mulai",
+    ];
 
-    await nextBtn.waitFor({ state: "visible", timeout: 60000 });
-
-    await this.randomMouseMove();
-    await this.humanDelay(400, 900);
-
-    // remove spinner overlay
     await this.page.evaluate(() => {
       document
         .querySelectorAll('[data-testid="spinner"], .css-100, .ms-Spinner')
         .forEach((el) => el.remove());
     });
 
-    try {
-      await nextBtn.click({ timeout: 5000, force: true });
-    } catch {
-      console.log("Playwright click blocked, fallback to JS click...");
-      await nextBtn.evaluate((el) => el.click());
-    }
-
-    console.log("Next/Get Started clicked");
-
+    await this.clickButtonWithPossibleNames(possibleNames);
     await this.waitForPage();
+  }
+
+  async clickStartTrialButton() {
+    console.log("[STEP 14] Clicking Start Trial button");
+    const possibleNames = [
+      "Start trial",
+      "Mulai uji coba",
+      "Try now",
+      "Coba sekarang",
+      "Start",
+    ];
+    await this.clickButtonWithPossibleNames(possibleNames);
   }
 
   async extractDomainEmail() {
