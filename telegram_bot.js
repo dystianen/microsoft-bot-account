@@ -139,6 +139,13 @@ bot.onText(/\/generate|🚀 Generate/, async (msg) => {
     );
   }
 
+  if (session.running) {
+    return bot.sendMessage(
+      chatId,
+      "⚠️ Automation is already running! You can add more accounts now, but they will only be processed in the next run.",
+    );
+  }
+
   bot.sendMessage(
     chatId,
     `Starting automation for ${session.accounts.length} accounts...`,
@@ -150,10 +157,7 @@ bot.onText(/\/generate|🚀 Generate/, async (msg) => {
 
   // Round-robin distribution
   session.accounts.forEach((acc, index) => {
-    // Cari payment yang tersedia (di bawah limit) mulai dari index % total_payment
-    let found = false;
     let startIdx = index % session.payments.length;
-
     for (let i = 0; i < session.payments.length; i++) {
       const pIndex = (startIdx + i) % session.payments.length;
       if (paymentUsage[pIndex] < maxPerPayment) {
@@ -162,7 +166,6 @@ bot.onText(/\/generate|🚀 Generate/, async (msg) => {
           payment: session.payments[pIndex],
         });
         paymentUsage[pIndex]++;
-        found = true;
         break;
       }
     }
@@ -175,100 +178,99 @@ bot.onText(/\/generate|🚀 Generate/, async (msg) => {
     );
   }
 
+  session.running = true; // Kunci proses
   const batchSize = config.concurrencyLimit || 2;
+  
   bot.sendMessage(
     chatId,
     `Paired ${paired.length} accounts. Running in batches of ${batchSize} (VCC Safety Mode)...`,
     mainMenu,
   );
 
-  for (let i = 0; i < paired.length; i += batchSize) {
-    const batch = paired.slice(i, i + batchSize);
-    const batchPromises = [];
+  try {
+    for (let i = 0; i < paired.length; i += batchSize) {
+      const batch = paired.slice(i, i + batchSize);
+      const batchPromises = [];
 
-    console.log(`Starting batch starting at index ${i}`);
+      for (let j = 0; j < batch.length; j++) {
+        const account = batch[j];
+        const globalIndex = i + j;
 
-    for (let j = 0; j < batch.length; j++) {
-      const account = batch[j];
-      const globalIndex = i + j;
-
-      const taskPromise = (async () => {
-        bot.sendMessage(
-          chatId,
-          `Starting [${globalIndex + 1}/${paired.length}]: ${account.microsoftAccount.email}...`,
-        );
-
-        try {
-          const result = await processSingleAccount(
-            account,
-            globalIndex,
-            paired.length,
-          );
-
-          // If domain email is missing, mark as FAILED
-          if (result.status === "SUCCESS" && !result.domainEmail) {
-            result.status = "FAILED";
-            result.log = "Confirmation page loaded but Domain Email not found.";
-          }
-
-          let statusEmoji = result.status === "SUCCESS" ? "✅" : "❌";
-
-          // Escape special HTML characters from log to prevent parsing errors
-          const safeLog = (result.log || "Unknown error")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .substring(0, 1000); // Truncate to 1000 chars
-
-          let message = `${statusEmoji} <b>Result for ${account.microsoftAccount.email}</b>\n\n`;
-          message += `<b>Status:</b> ${result.status}\n`;
-
-          if (result.status === "SUCCESS") {
-            message += `<b>Domain Email:</b> <code>${result.domainEmail}</code>\n`;
-            message += `<b>Domain Password:</b> <code>${result.domainPassword}</code>\n`;
-          } else {
-            message += `<b>Log:</b> ${safeLog}\n`;
-          }
-
-          await bot
-            .sendMessage(chatId, message, { parse_mode: "HTML" })
-            .catch((e) => {
-              console.error(
-                "Failed to send HTML message, retrying with plain text...",
-                e.message,
-              );
-              return bot.sendMessage(
-                chatId,
-                `❌ Result for ${account.microsoftAccount.email}\nStatus: ${result.status}\nError: ${safeLog.substring(0, 200)}`,
-              );
-            });
-        } catch (err) {
+        const taskPromise = (async () => {
           bot.sendMessage(
             chatId,
-            `❌ System Error for ${account.microsoftAccount.email}: ${err.message.substring(0, 200)}`,
+            `Starting [${globalIndex + 1}/${paired.length}]: ${account.microsoftAccount.email}...`,
           );
+
+          try {
+            const result = await processSingleAccount(
+              account,
+              globalIndex,
+              paired.length,
+            );
+
+            // If domain email is missing, mark as FAILED
+            if (result.status === "SUCCESS" && !result.domainEmail) {
+              result.status = "FAILED";
+              result.log = "Confirmation page loaded but Domain Email not found.";
+            }
+
+            let statusEmoji = result.status === "SUCCESS" ? "✅" : "❌";
+
+            // Escape special HTML characters from log
+            const safeLog = (result.log || "Unknown error")
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .substring(0, 1000);
+
+            let message = `${statusEmoji} <b>Result for ${account.microsoftAccount.email}</b>\n\n`;
+            message += `<b>Status:</b> ${result.status}\n`;
+
+            if (result.status === "SUCCESS") {
+              message += `<b>Domain Email:</b> <code>${result.domainEmail}</code>\n`;
+              message += `<b>Domain Password:</b> <code>${result.domainPassword}</code>\n`;
+            } else {
+              message += `<b>Log:</b> ${safeLog}\n`;
+            }
+
+            await bot
+              .sendMessage(chatId, message, { parse_mode: "HTML" })
+              .catch((e) => {
+                return bot.sendMessage(
+                  chatId,
+                  `❌ Result for ${account.microsoftAccount.email}\nStatus: ${result.status}\nError: ${safeLog.substring(0, 200)}`,
+                );
+              });
+          } catch (err) {
+            bot.sendMessage(
+              chatId,
+              `❌ System Error for ${account.microsoftAccount.email}: ${err.message.substring(0, 200)}`,
+            );
+          }
+        })();
+
+        batchPromises.push(taskPromise);
+
+        if (j < batch.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
         }
-      })();
+      }
 
-      batchPromises.push(taskPromise);
+      await Promise.all(batchPromises);
 
-      // Staggered start delay (5 seconds) within the batch
-      if (j < batch.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+      if (i + batchSize < paired.length) {
+        bot.sendMessage(
+          chatId,
+          `Batch finished. Waiting for next batch to start...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
-
-    // Wait for the entire batch to finish before moving to the next
-    await Promise.all(batchPromises);
-
-    if (i + batchSize < paired.length) {
-      bot.sendMessage(
-        chatId,
-        `Batch finished. Waiting for next batch to start...`,
-      );
-      // Optional: Adding a small cool-down between batches
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
+  } finally {
+    session.running = false; // Buka kunci proses
+    // Hapus akun yang sudah diproses dari antrean
+    session.accounts = session.accounts.slice(paired.length);
   }
 
   bot.sendMessage(chatId, "🏁 All tasks finished!", mainMenu);
