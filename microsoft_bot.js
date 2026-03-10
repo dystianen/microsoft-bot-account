@@ -876,8 +876,11 @@ class MicrosoftBot {
     }
 
     const rawText = (await emailLocator.textContent())?.trim() || "";
-    const emailMatch = rawText.match(/[\w.+-]+@[\w.-]+\.onmicrosoft\.com/i);
-    const domainEmail = emailMatch ? emailMatch[0] : rawText;
+    const emailRegex =
+      /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(onmicrosoft\.[a-z]{2,}|onmschina\.cn)/i;
+    const emailMatch = rawText.match(emailRegex);
+
+    const domainEmail = emailMatch?.[0] || this.extractedDomainEmail || "";
     const domainPassword = this.accountConfig.microsoftAccount.password;
 
     console.log("[STEP 16] Final Domain Email:", domainEmail);
