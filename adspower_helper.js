@@ -20,8 +20,17 @@ class AdsPowerHelper {
     return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.${minor}.${patch} Safari/537.36`;
   }
 
-  async createProfile(profileName) {
+  async createProfile(profileName, proxyOverride = null) {
     try {
+      const proxy = {
+        proxy_type: "socks5",
+        proxy_host: config.proxy.host,
+        proxy_port: config.proxy.port,
+        proxy_user: proxyOverride?.username || config.proxy.username,
+        proxy_password: proxyOverride?.password || config.proxy.password,
+        proxy_soft: "other",
+      };
+
       const response = await axios.post(
         `${this.baseUrl}/api/v1/user/create`,
         {
@@ -30,24 +39,15 @@ class AdsPowerHelper {
           domain_name: "",
           os_type: "windows",
           repeat_config: ["0"],
-          user_proxy_config: {
-            proxy_type: "socks5",
-            proxy_host: config.proxy.host,
-            proxy_port: config.proxy.port,
-            proxy_user: config.proxy.username,
-            proxy_password: config.proxy.password,
-            proxy_soft: "other",
-          },
+          user_proxy_config: proxy,
           fingerprint_config: {
             automatic_timezone: "1",
-            // Sesuaikan bahasa dengan lokasi proxy (Indonesia)
-            // Ini penting — mismatch bahasa vs IP lokasi bisa trigger CAPTCHA
             language: ["id-ID", "id", "en-US", "en", "ja-JP", "ja", "ko-KR", "ko", "zh-CN", "zh", "zh-TW", "zh-HK", "zh-MO", "zh-SG", "zh-Hans", "zh-Hant", "fr-FR", "fr", "de-DE", "de", "it-IT", "it", "es-ES", "es", "pt-PT", "pt", "ru-RU", "ru", "ar-SA", "ar", "hi-IN", "hi", "bn-BD", "bn", "ta-IN", "ta", "te-IN", "te", "ur-PK", "ur", "fa-IR", "fa", "th-TH", "th", "vi-VN", "vi", "ko-KR", "ko", "zh-CN", "zh", "zh-TW", "zh-HK", "zh-MO", "zh-SG", "zh-Hans", "zh-Hant"],
             flash: "block",
             fonts: ["all"],
             webrtc: "disabled",
-            canvas: "1",       // Sedikit noise lebih natural dari "0"
-            webgl: "1",        // Sama
+            canvas: "1",
+            webgl: "1",
             webgl_image: "1",
             hardware_concurrency: "default",
             ua: this.randomUserAgent(),
@@ -80,9 +80,10 @@ class AdsPowerHelper {
     }
   }
 
-  async startBrowser(profileId) {
+  async startBrowser(profileId, headlessOverride = null) {
     try {
-      const headlessParam = config.headless ? "&open_tabs=1&headless=1" : "";
+      const isHeadless = headlessOverride !== null ? headlessOverride : config.headless;
+      const headlessParam = isHeadless ? "&open_tabs=1&headless=1" : "";
       const response = await axios.get(
         `${this.baseUrl}/api/v1/browser/start?user_id=${profileId}${headlessParam}`,
         {

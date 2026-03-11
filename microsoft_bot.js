@@ -250,7 +250,8 @@ class MicrosoftBot {
   async openMicrosoftPage() {
     console.log("[STEP 2] Opening Microsoft page");
 
-    await this.page.goto(config.microsoftUrl, {
+    const url = this.accountConfig.microsoftUrl || config.microsoftUrl;
+    await this.page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: HARD_TIMEOUT,
     });
@@ -318,41 +319,13 @@ class MicrosoftBot {
       .first();
 
     const hasCaptcha = await combinedLocator
-      .waitFor({ state: "visible", timeout: 5000 })
+      .waitFor({ state: "visible", timeout: 8000 })
       .then(() => true)
       .catch(() => false);
 
-    if (!hasCaptcha) return;
-
-    console.log("[CAPTCHA] CAPTCHA detected — clicking Next to trigger puzzle...");
-
-    // Klik tombol Next/Berikutnya di dalam popup CAPTCHA
-    await this.clickButtonWithPossibleNames(["Next", "Berikutnya", "Selanjutnya"]);
-
-    // Tunggu CAPTCHA selesai (user solve manual atau auto-solved)
-    console.log("[CAPTCHA] Waiting for CAPTCHA to be solved...");
-    const start = Date.now();
-    const interval = setInterval(() => {
-      console.log(`[CAPTCHA] Still waiting... ${Math.round((Date.now() - start) / 1000)}s`);
-    }, 10000);
-
-    try {
-      // Tunggu sampai CAPTCHA indicator hilang dari halaman
-      await this.runWithMonitor(this.page.waitForFunction(
-        () => {
-          const text = document.body.innerText;
-          return (
-            !text.includes("Melindungi akun Anda") &&
-            !text.includes("Protecting your account") &&
-            !text.includes("Pecahkan teka-teki") &&
-            !text.includes("solve the puzzle")
-          );
-        },
-        { timeout: HARD_TIMEOUT },
-      ));
-      console.log("[CAPTCHA] CAPTCHA resolved, continuing...");
-    } finally {
-      clearInterval(interval);
+    if (hasCaptcha) {
+      console.log("[CAPTCHA] CAPTCHA detected — aborting...");
+      throw new Error("CAPTCHA_DETECTED: CAPTCHA detected.");
     }
   }
 

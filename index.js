@@ -1,54 +1,28 @@
 const adsPowerHelper = require("./adspower_helper");
 const MicrosoftBot = require("./microsoft_bot");
 const config = require("./config");
-const fs = require("fs");
-const XLSX = require("xlsx");
-
-const EXCEL_FILE = "./accounts_result.xlsx";
-const HISTORY_FILE = "./history.json";
+const { SuccessAccount } = require("./models");
 
 let _saveQueue = Promise.resolve();
 
-function saveToHistory(result) {
+async function saveToDB(result, telegram_id) {
   if (result.status !== "SUCCESS") return;
-  _saveQueue = _saveQueue
-    .then(async () => {
-      let history = [];
-      if (fs.existsSync(HISTORY_FILE)) {
-        try {
-          history = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
-        } catch (e) {
-          history = [];
-        }
-      }
-      history.push({
-        domainEmail: result.domainEmail,
-        domainPassword: result.domainPassword,
-        timestamp: new Date().toISOString(),
-      });
-      fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
-      updateExcelReport(history);
-    })
-    .catch((e) => console.error("[saveToHistory] Error:", e.message));
-}
-
-function updateExcelReport(history) {
   try {
-    const data = history.map((item) => ({
-      "Domain Email": item.domainEmail,
-      "Domain Password": item.domainPassword,
-      "Created Date": item.timestamp.split("T")[0],
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Success Accounts");
-    worksheet["!cols"] = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
-    XLSX.writeFile(workbook, EXCEL_FILE);
-    console.log(`[Excel] Report updated: ${history.length} record(s)`);
-  } catch (e) {
-    console.error("[Excel] Failed to write report:", e.message);
+    const successAcc = new SuccessAccount({
+      email: result.email || "unknown",
+      password: result.domainPassword || result.password || "unknown",
+      domainEmail: result.domainEmail,
+      domainPassword: result.domainPassword,
+      telegram_id: telegram_id.toString(),
+    });
+    await successAcc.save();
+    console.log(`[DB] Account saved for user ${telegram_id}: ${result.domainEmail}`);
+  } catch (err) {
+    console.error(`[DB] Error saving to DB: ${err.message}`);
   }
 }
+
+// File-based history removed in favor of MongoDB
 
 async function processSingleAccount(accountConfig, index, total) {
   const profileName = `MS-Account-${Date.now()}-${index}`;
@@ -65,12 +39,18 @@ async function processSingleAccount(accountConfig, index, total) {
   try {
     // 1. Create AdsPower profile
     console.log(`[Account ${index + 1}] Creating AdsPower profile...`);
-    currentProfileId = await adsPowerHelper.createProfile(profileName);
+    const proxyOverride = (accountConfig.proxyUsername && accountConfig.proxyPassword) ? {
+      username: accountConfig.proxyUsername,
+      password: accountConfig.proxyPassword
+    } : null;
+    
+    currentProfileId = await adsPowerHelper.createProfile(profileName, proxyOverride);
     console.log(`[Account ${index + 1}] Created profile: ${currentProfileId}`);
 
     // 2. Start browser
     console.log(`[Account ${index + 1}] Starting browser...`);
-    const { wsUrl } = await adsPowerHelper.startBrowser(currentProfileId);
+    const headlessOverride = accountConfig.headless !== undefined ? accountConfig.headless : null;
+    const { wsUrl } = await adsPowerHelper.startBrowser(currentProfileId, headlessOverride);
     console.log(`[Account ${index + 1}] Browser started. WS URL: ${wsUrl}`);
 
     // 3. Run Microsoft automation
@@ -151,7 +131,8 @@ async function processSingleAccount(accountConfig, index, total) {
 
     // Save to global history if success
     if (executionResult.status === "SUCCESS") {
-      saveToHistory(executionResult);
+      executionResult.email = accountConfig.microsoftAccount.email;
+      await saveToDB(executionResult, accountConfig.telegram_id);
     }
   }
 
@@ -160,6 +141,4 @@ async function processSingleAccount(accountConfig, index, total) {
 
 module.exports = {
   processSingleAccount,
-  HISTORY_FILE,
-  EXCEL_FILE,
 };
