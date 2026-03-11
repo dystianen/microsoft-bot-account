@@ -6,7 +6,7 @@ const SPINNER_SELECTOR =
   '[data-testid="spinner"], .css-100, .css-101, .ms-Spinner, [class*="spinner" i], [class*="loading" i]';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
-const HARD_TIMEOUT = 1.5 * 60 * 1000; // 2 menit
+const HARD_TIMEOUT = 1.5 * 60 * 1000; // 1 menit 30 detik
 
 class MicrosoftBot {
   constructor(wsUrl, accountConfig) {
@@ -116,74 +116,66 @@ class MicrosoftBot {
   async selectDropdownByText(selector, text) {
     await this.waitForSpinnerGone();
 
-    const searchList = Array.isArray(text) ? text : [text];
-    const normalizedSearch = searchList.map(t => (t || "").toString().trim().toLowerCase());
-
+    // Pastikan dropdown sebelumnya sudah tertutup
     await this.page.waitForSelector(".ms-Dropdown-items", {
       state: "detached",
       timeout: 5000,
     }).catch(() => { });
 
     const dropdown = this.page.locator(selector).first();
-    await dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
-    await this.randomMouseMove();
-    await dropdown.click({ force: true });
 
-    await this.page.waitForSelector(".ms-Dropdown-items", {
-      state: "attached",
+    await dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+
+    await dropdown.scrollIntoViewIfNeeded();
+    await this.randomMouseMove();
+
+    // buka dropdown
+    await dropdown.click();
+
+    // tunggu dropdown container muncul
+    const dropdownItems = this.page.locator(".ms-Dropdown-items");
+    await dropdownItems.waitFor({
+      state: "visible",
       timeout: HARD_TIMEOUT,
     });
 
-    const allOptions = this.page.locator(".ms-Dropdown-items .ms-Dropdown-item");
-    const count = await allOptions.count();
+    // tunggu option muncul
+    const options = this.page.locator(".ms-Dropdown-item");
+    await options.first().waitFor({
+      state: "visible",
+      timeout: HARD_TIMEOUT,
+    });
+
+    // support text array atau string
+    const searchList = Array.isArray(text)
+      ? text.map(t => (t || "").toString().trim())
+      : [(text || "").toString().trim()];
 
     let targetOption = null;
 
-    for (let i = 0; i < count; i++) {
-      const option = allOptions.nth(i);
+    for (const search of searchList) {
+      const option = this.page
+        .locator(".ms-Dropdown-item", { hasText: search })
+        .first();
 
-      const isDisabled =
-        (await option.getAttribute("aria-disabled")) === "true" ||
-        (await option.getAttribute("disabled")) !== null;
-      if (isDisabled) continue;
-
-      const span = option.locator(".ms-Dropdown-optionText").first();
-      const optionText = (await span.textContent().catch(() => ""))
-        .trim()
-        .toLowerCase();
-
-      for (const search of normalizedSearch) {
-        if (
-          optionText === search ||
-          optionText.startsWith(search) ||
-          optionText.includes(search)
-        ) {
-          targetOption = option;
-          break;
-        }
+      if (await option.count()) {
+        targetOption = option;
+        break;
       }
-
-      if (targetOption) break;
     }
 
     if (!targetOption) {
-      console.warn(`[DROPDOWN] Option not found for: "${text}"`);
+      console.warn(`[DROPDOWN] Option not found for: ${text}`);
       return false;
     }
 
-    const optionText = await targetOption
-      .locator(".ms-Dropdown-optionText")
-      .textContent()
-      .catch(() => text);
+    const displayText = await targetOption.textContent().catch(() => text);
+    console.log(`[DROPDOWN] Clicking: "${displayText?.trim()}"`);
 
-    console.log(`[DROPDOWN] Clicking: "${optionText?.trim()}"`);
+    await targetOption.scrollIntoViewIfNeeded();
+    await targetOption.click();
 
-    await targetOption.dispatchEvent("mouseover");
-    await this.humanDelay(50, 100);
-    await targetOption.dispatchEvent("mousedown");
-    await targetOption.dispatchEvent("mouseup");
-    await targetOption.dispatchEvent("click");
-
+    // tunggu dropdown tertutup
     await this.page.waitForSelector(".ms-Dropdown-items", {
       state: "detached",
       timeout: 5000,
@@ -191,7 +183,7 @@ class MicrosoftBot {
 
     return true;
   }
-  
+
   async waitForPage(selector) {
     await this.waitForSpinnerGone();
     if (selector) {
@@ -872,6 +864,7 @@ class MicrosoftBot {
 
   async clickPostTrialNextButton() {
     console.log("[STEP 15] Clicking final Next/Get Started button");
+    await this.waitForSpinnerGone(800);
 
     await this.page.evaluate(() => {
       document
