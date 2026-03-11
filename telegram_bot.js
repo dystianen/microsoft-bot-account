@@ -286,13 +286,24 @@ bot.onText(/🚀 Generate/, async (msg) => {
             const result = await processSingleAccount(pairedData, currentIdx - 1, processedCount + session.accounts.length);
 
             if (result.status === "SUCCESS") {
-              vcc.saldo -= 1;
-              if (vcc.saldo <= 0) vcc.status = "empty";
-              await vcc.save();
+              // Use atomic update to avoid race conditions and ensure balance decreases
+              const updatedVcc = await VCC.findByIdAndUpdate(
+                vcc._id,
+                { $inc: { saldo: -1 } },
+                { new: true }
+              );
+              
+              console.log(`[DB] VCC ${vcc.cardNumber.slice(-4)} balance decreased: ${vcc.saldo} -> ${updatedVcc.saldo}`);
+
+              if (updatedVcc.saldo <= 0) {
+                updatedVcc.status = "empty";
+                await updatedVcc.save();
+                console.log(`[DB] VCC ${vcc.cardNumber.slice(-4)} is now empty.`);
+              }
 
               let message = `✅ <b>Success [${currentIdx}] for ${escapeHTML(accountData.email)}</b>\n`;
               message += `Domain: <code>${escapeHTML(result.domainEmail)}</code>\n`;
-              message += `VCC Balance: ${vcc.saldo}`;
+              message += `VCC Balance: ${updatedVcc.saldo}`;
               await safeSendMessage(chatId, message, { parse_mode: "HTML" });
             } else {
               let message = `❌ <b>Failed [${currentIdx}] for ${escapeHTML(accountData.email)}</b>\n`;

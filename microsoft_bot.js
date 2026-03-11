@@ -939,7 +939,8 @@ class MicrosoftBot {
           "incorrectly formatted postal code",
           "something happened",
           "we are sorry, but we could not complete this",
-          "try a different way"
+          "try a different way",
+          "We're checking to make sure we can offer you Microsoft products and services."
         ];
 
         const foundMarker = markers.find(m => lowerText.includes(m));
