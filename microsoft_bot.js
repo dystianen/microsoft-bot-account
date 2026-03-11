@@ -2,8 +2,7 @@ const { chromium } = require("playwright-core");
 const fs = require("fs");
 const config = require("./config");
 
-const SPINNER_SELECTOR =
-  '[data-testid="spinner"], .css-100, .css-101, .ms-Spinner, [class*="spinner" i], [class*="loading" i]';
+const SPINNER_SELECTOR = '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
 const HARD_TIMEOUT = 1.5 * 60 * 1000; // 1 menit 30 detik
@@ -34,66 +33,86 @@ class MicrosoftBot {
     await this.page.mouse.move(x, y, { steps: 10 });
   }
 
-  /**
-   * Tunggu semua spinner hilang dari halaman.
-   * Kalau tidak ada spinner sama sekali, langsung lanjut.
-   */
-  async waitForSpinnerGone(extraDelay = 0) {
-    const spinnerPresent = await this.page
-      .locator(SPINNER_SELECTOR)
-      .first()
-      .isVisible()
-      .catch(() => false);
+  async runWithMonitor(promise, timeout = HARD_TIMEOUT) {
+    let isDone = false;
+    const checkLoop = async () => {
+      // Loop terus sampai isDone = true (promise selesai) atau terdeteksi error.
+      // Kita tidak beri timeout internal di sini karena biarlah 'promise' yang pegang timeout-nya sendiri.
+      while (!isDone) {
+        await this.page.waitForTimeout(2000).catch(() => { isDone = true; });
+        if (isDone) break;
+        if (await this.checkForError()) {
+          throw new Error("MICROSOFT_ERROR_PAGE: Terdeteksi selama penantian.");
+        }
+      }
+    };
 
-    if (spinnerPresent) {
-      console.log("[WAIT] Spinner detected, waiting until gone...");
-      await this.page
-        .waitForSelector(SPINNER_SELECTOR, {
-          state: "detached",
-          timeout: HARD_TIMEOUT,
-        })
-        .catch(() => {
-          console.log("[WAIT] Spinner still present after hard timeout, continuing...");
-        });
+    return await Promise.race([
+      promise,
+      checkLoop(),
+    ]).finally(() => {
+      isDone = true;
+    });
+  }
+
+  async waitForSpinnerGone(extraDelay = 0) {
+    const spinner = this.page.locator(SPINNER_SELECTOR).first();
+    const spinnerVisible = await spinner.isVisible().catch(() => false);
+
+    if (spinnerVisible) {
+      console.log("[WAIT] Spinner detected, waiting until hidden...");
+      try {
+        await this.runWithMonitor(
+          spinner.waitFor({ state: "hidden", timeout: HARD_TIMEOUT })
+        );
+      } catch (e) {
+        if (e.message.includes("MICROSOFT_ERROR_PAGE")) throw e;
+        console.log("[WAIT] Spinner still visible or check failed, continuing...");
+      }
+      console.log("[WAIT] Spinner gone.");
     }
 
-    if (extraDelay > 0) await this.humanDelay(extraDelay, extraDelay + 300);
+    await this.checkForError().then(hasError => {
+      if (hasError) throw new Error("MICROSOFT_ERROR_PAGE: Terdeteksi setelah spinner.");
+    }).catch(e => {
+      if (e.message.includes("MICROSOFT_ERROR_PAGE")) throw e;
+    });
+
+    if (extraDelay > 0) {
+      await this.humanDelay(extraDelay, extraDelay + 300);
+    }
   }
 
-  /**
-   * Wrapper waitFor tanpa timeout fixed — tunggu spinner dulu, lalu tunggu locator.
-   * Timeout HARD_TIMEOUT hanya sebagai safety net.
-   */
   async waitForVisible(locator) {
     await this.waitForSpinnerGone();
-    await locator.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+    await this.runWithMonitor(locator.waitFor({ state: "visible", timeout: HARD_TIMEOUT }));
   }
 
-  /**
-   * Klik salah satu dari beberapa nama button.
-   * Gabungkan semua nama jadi satu selector, tunggu spinner, lalu klik.
-   */
   async clickButtonWithPossibleNames(names) {
     await this.waitForSpinnerGone();
 
-    const selectors = names.flatMap((name) => [
-      `button:has-text("${name}")`,
-      `a:has-text("${name}")`,
-    ]);
-    const combinedLocator = this.page.locator(selectors.join(", ")).first();
+    const pattern = new RegExp(
+      names
+        .map(n => n.replace(/\s+/g, "\\s*"))
+        .join("|"),
+      "i"
+    );
 
-    await combinedLocator.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+    const button = this.page.getByRole("button", { name: pattern }).first();
+
+    await this.runWithMonitor(button.waitFor({ state: "visible", timeout: HARD_TIMEOUT }));
+
     await this.randomMouseMove();
     await this.humanDelay(200, 500);
 
     try {
-      await combinedLocator.click({ timeout: 8000, force: true });
+      await button.click({ timeout: 8000, force: true });
     } catch {
       console.log("[INFO] Playwright click blocked, fallback to JS click...");
-      await combinedLocator.evaluate((el) => el.click());
+      await button.evaluate(el => el.click());
     }
 
-    const clickedText = await combinedLocator.textContent().catch(() => "unknown");
+    const clickedText = await button.textContent().catch(() => "unknown");
     console.log(`[INFO] Clicked: "${clickedText?.trim()}"`);
   }
 
@@ -124,7 +143,7 @@ class MicrosoftBot {
 
     const dropdown = this.page.locator(selector).first();
 
-    await dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+    await this.runWithMonitor(dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT }));
 
     await dropdown.scrollIntoViewIfNeeded();
     await this.randomMouseMove();
@@ -134,17 +153,17 @@ class MicrosoftBot {
 
     // tunggu dropdown container muncul
     const dropdownItems = this.page.locator(".ms-Dropdown-items");
-    await dropdownItems.waitFor({
+    await this.runWithMonitor(dropdownItems.waitFor({
       state: "visible",
       timeout: HARD_TIMEOUT,
-    });
+    }));
 
     // tunggu option muncul
     const options = this.page.locator(".ms-Dropdown-item");
-    await options.first().waitFor({
+    await this.runWithMonitor(options.first().waitFor({
       state: "visible",
       timeout: HARD_TIMEOUT,
-    });
+    }));
 
     // support text array atau string
     const searchList = Array.isArray(text)
@@ -187,14 +206,14 @@ class MicrosoftBot {
   async waitForPage(selector) {
     await this.waitForSpinnerGone();
     if (selector) {
-      await this.page.waitForSelector(selector, {
+      await this.runWithMonitor(this.page.waitForSelector(selector, {
         state: "attached",
         timeout: HARD_TIMEOUT,
-      });
+      }));
     } else {
-      await this.page.waitForLoadState("domcontentloaded", {
+      await this.runWithMonitor(this.page.waitForLoadState("domcontentloaded", {
         timeout: HARD_TIMEOUT,
-      });
+      }));
     }
   }
 
@@ -310,7 +329,7 @@ class MicrosoftBot {
 
     try {
       // Tunggu sampai CAPTCHA indicator hilang dari halaman
-      await this.page.waitForFunction(
+      await this.runWithMonitor(this.page.waitForFunction(
         () => {
           const text = document.body.innerText;
           return (
@@ -321,7 +340,7 @@ class MicrosoftBot {
           );
         },
         { timeout: HARD_TIMEOUT },
-      );
+      ));
       console.log("[CAPTCHA] CAPTCHA resolved, continuing...");
     } finally {
       clearInterval(interval);
@@ -525,7 +544,7 @@ class MicrosoftBot {
       const domainInput = this.page
         .locator('input.ms-TextField-field[maxlength="27"]')
         .first();
-      await domainInput.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+      await this.runWithMonitor(domainInput.waitFor({ state: "visible", timeout: HARD_TIMEOUT }));
       await this.page
         .waitForFunction(
           (el) => el && el.value && el.value.length > 3,
@@ -740,7 +759,7 @@ class MicrosoftBot {
     const errorWatcher = new Promise(async (resolve, reject) => {
       const deadline = Date.now() + TIMEOUT;
       while (!resolved && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await this.page.waitForTimeout(2000).catch(() => { });
         if (resolved) break;
         if (await this.checkForError()) {
           return reject(
@@ -881,6 +900,7 @@ class MicrosoftBot {
       "Get started",
       "Get Started",
       "Mulai",
+      "Mulai percobaan"
     ]);
 
     console.log("[INFO] Next/Get Started clicked");
@@ -925,66 +945,53 @@ class MicrosoftBot {
 
   async checkForError() {
     try {
-      const { hasError } = await this.page.evaluate(() => {
-        const text = document.body.innerText;
-        return {
-          hasError:
-            (text.includes("Something went wrong") && text.includes("Error Code")) ||
-            text.includes("Terjadi sesuatu") ||
-            text.includes("715-123280") ||
-            (text.includes("Something happened") &&
-              !text.includes("Something happened to be")),
-        };
-      });
+      // 1. Cek pesan error validasi di field (biasanya cepat)
+      const fieldError = this.page.locator('[data-automation-id="error-message"]').first();
+      if (await fieldError.isVisible().catch(() => false)) {
+        const msg = (await fieldError.textContent().catch(() => "")).trim();
+        console.log(`[ERROR] Field validation error detected: ${msg}`);
+        return true;
+      }
 
-      if (hasError) {
+      // 2. Cek teks body untuk indikasi error Microsoft (Optimized evaluate)
+      const hasMajorError = await this.page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        const markers = [
+          "something went wrong",
+          "error code",
+          "terjadi sesuatu",
+          "715-123280",
+          "incorrectly formatted postal code",
+          "something happened"
+        ];
+        
+        // Cek marker utama
+        const found = markers.some(m => text.includes(m));
+        if (!found) return false;
+
+        // Pengecualian protektif
+        if (text.includes("something happened") && text.includes("something happened to be")) {
+           return false;
+        }
+
+        return true;
+      }).catch(() => false);
+
+      if (hasMajorError) {
         console.log("[ERROR] Microsoft error page detected.");
         return true;
       }
-    } catch { }
-
+    } catch (err) {
+      // Ignore silence check errors
+    }
     return false;
   }
 
   async waitWithCheck(locator, timeout = HARD_TIMEOUT) {
-    let done = false;
-    let errorFound = null;
-    let intervalId = null;
-
-    const errorLoop = (async () => {
-      const deadline = Date.now() + timeout;
-      while (!done && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
-        if (done) break;
-        if (await this.checkForError()) {
-          errorFound = new Error("MICROSOFT_ERROR_PAGE: Halaman error terdeteksi.");
-          done = true;
-          return;
-        }
-      }
-    })();
-
-    const errorInterrupt = new Promise((_, reject) => {
-      intervalId = setInterval(() => {
-        if (errorFound) {
-          clearInterval(intervalId);
-          reject(errorFound);
-        }
-      }, 200);
-    });
-
-    try {
-      await Promise.race([
-        locator.waitFor({ state: "visible", timeout }),
-        errorInterrupt,
-      ]);
-    } finally {
-      done = true;
-      clearInterval(intervalId);
-      await errorLoop;
-    }
-
-    if (errorFound) throw errorFound;
+    return await this.runWithMonitor(
+      locator.waitFor({ state: "visible", timeout }),
+      timeout
+    );
   }
 
   // ─── Cleanup & orchestration ─────────────────────────────────────────────────
