@@ -11,11 +11,13 @@ class AdsPowerHelper {
   }
 
   randomUserAgent() {
-    const chromeVersions = ["120", "121", "122", "123", "124", "125"];
+    // Gunakan versi Chrome yang lebih recent dan realistis
+    const chromeVersions = ["124", "125", "126", "127", "128"];
     const version =
       chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
     const minor = this.randomInt(0, 9999);
-    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.${minor}.0 Safari/537.36`;
+    const patch = this.randomInt(0, 999);
+    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.${minor}.${patch} Safari/537.36`;
   }
 
   async createProfile(profileName) {
@@ -38,13 +40,15 @@ class AdsPowerHelper {
           },
           fingerprint_config: {
             automatic_timezone: "1",
-            language: ["en-US", "en"],
+            // Sesuaikan bahasa dengan lokasi proxy (Indonesia)
+            // Ini penting — mismatch bahasa vs IP lokasi bisa trigger CAPTCHA
+            language: ["id-ID", "id", "en-US", "en", "ja-JP", "ja", "ko-KR", "ko", "zh-CN", "zh", "zh-TW", "zh-HK", "zh-MO", "zh-SG", "zh-Hans", "zh-Hant", "fr-FR", "fr", "de-DE", "de", "it-IT", "it", "es-ES", "es", "pt-PT", "pt", "ru-RU", "ru", "ar-SA", "ar", "hi-IN", "hi", "bn-BD", "bn", "ta-IN", "ta", "te-IN", "te", "ur-PK", "ur", "fa-IR", "fa", "th-TH", "th", "vi-VN", "vi", "ko-KR", "ko", "zh-CN", "zh", "zh-TW", "zh-HK", "zh-MO", "zh-SG", "zh-Hans", "zh-Hant"],
             flash: "block",
             fonts: ["all"],
             webrtc: "disabled",
-            canvas: "0",
-            webgl: "0",
-            webgl_image: "0",
+            canvas: "1",       // Sedikit noise lebih natural dari "0"
+            webgl: "1",        // Sama
+            webgl_image: "1",
             hardware_concurrency: "default",
             ua: this.randomUserAgent(),
           },
@@ -52,7 +56,7 @@ class AdsPowerHelper {
         {
           headers: {
             Authorization: `Bearer ${config.adsPower.apiKey}`,
-            "api-key": config.adsPower.apiKey, // Keeping both just in case
+            "api-key": config.adsPower.apiKey,
           },
         },
       );
@@ -76,26 +80,8 @@ class AdsPowerHelper {
     }
   }
 
-  // Helper function to select an option in a dropdown by its text content
-  async selectDropdownByText(page, text) {
-    // Pilih option by text (partial match supported for month/year formats)
-    await page.evaluate((textToSelect) => {
-      const options = document.querySelectorAll(
-        ".ms-Dropdown-items .ms-Dropdown-item",
-      );
-      const target = Array.from(options).find((o) => {
-        if (!o || !o.textContent) return false; // Added null check for o.textContent
-        const itemText = o.textContent.trim().toLowerCase();
-        const search = (textToSelect || "").toString().toLowerCase();
-        return itemText === search || itemText.startsWith(search);
-      });
-      if (target) target.click();
-    }, text);
-  }
-
   async startBrowser(profileId) {
     try {
-      // Menambahkan parameter headless jika dikonfigurasi
       const headlessParam = config.headless ? "&open_tabs=1&headless=1" : "";
       const response = await axios.get(
         `${this.baseUrl}/api/v1/browser/start?user_id=${profileId}${headlessParam}`,
@@ -113,12 +99,11 @@ class AdsPowerHelper {
         );
       }
 
-      // AdsPower returns ws endpoint in data.ws.puppeteer or data.ws.selenium
       const wsData = response.data?.data?.ws || {};
       const wsUrl = wsData.puppeteer || wsData.selenium;
-      
+
       if (!wsUrl) {
-          throw new Error("Could not find WebSocket URL in AdsPower response");
+        throw new Error("Could not find WebSocket URL in AdsPower response");
       }
 
       return {
@@ -159,7 +144,7 @@ class AdsPowerHelper {
             Authorization: `Bearer ${config.adsPower.apiKey}`,
             "api-key": config.adsPower.apiKey,
           },
-        }
+        },
       );
 
       if (response.data.code !== 0) {
