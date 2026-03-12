@@ -1,9 +1,6 @@
 const adsPowerHelper = require("./adspower_helper");
 const MicrosoftBot = require("./microsoft_bot");
-const config = require("./config");
 const { SuccessAccount } = require("./models");
-
-let _saveQueue = Promise.resolve();
 
 async function saveToDB(result, telegram_id) {
   if (result.status !== "SUCCESS") return;
@@ -22,9 +19,7 @@ async function saveToDB(result, telegram_id) {
   }
 }
 
-// File-based history removed in favor of MongoDB
-
-async function processSingleAccount(accountConfig, index, total, onPaymentSaved) {
+async function processSingleAccount(accountConfig, index, total) {
   const profileName = `MS-Account-${Date.now()}-${index}`;
 
   console.log(
@@ -43,7 +38,7 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
       username: accountConfig.proxyUsername,
       password: accountConfig.proxyPassword
     } : null;
-    
+
     currentProfileId = await adsPowerHelper.createProfile(profileName, proxyOverride);
     console.log(`[Account ${index + 1}] Created profile: ${currentProfileId}`);
 
@@ -54,7 +49,7 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
     console.log(`[Account ${index + 1}] Browser started. WS URL: ${wsUrl}`);
 
     // 3. Run Microsoft automation
-    bot = new MicrosoftBot(wsUrl, accountConfig, onPaymentSaved);
+    bot = new MicrosoftBot(wsUrl, accountConfig);
     result = await bot.run();
 
     if (result && result.success) {

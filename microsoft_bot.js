@@ -157,7 +157,7 @@ class MicrosoftBot {
         state: "detached",
         timeout: 5000,
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const dropdown = this.page.locator(selector).first();
 
@@ -224,7 +224,7 @@ class MicrosoftBot {
         state: "detached",
         timeout: 5000,
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return true;
   }
@@ -422,7 +422,6 @@ class MicrosoftBot {
       'div[role="combobox"][id*="size" i], div[role="combobox"][data-testid*="size" i], select[id*="size" i]',
       this.accountConfig.microsoftAccount.companySize,
     );
-    await this.humanDelay(600, 1200);
 
     // Region / State
     const regionInput = this.page
@@ -438,10 +437,9 @@ class MicrosoftBot {
       await regionInput.click();
       await regionInput.pressSequentially(
         this.accountConfig.microsoftAccount.state || "Alabama",
-        { delay: Math.floor(Math.random() * 20) + 30 },
+        { delay: Math.floor(Math.random() * 30) + 50 },
       );
       console.log("Region filled as text input");
-      await this.humanDelay(1000, 2000);
     } else {
       await this.selectDropdownByText(
         'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i]',
@@ -597,14 +595,14 @@ class MicrosoftBot {
 
     await this.waitForVisible(passwordLocator);
     await this.randomMouseMove();
-    await passwordLocator.click({ force: true }).catch(() => {});
+    await passwordLocator.click({ force: true }).catch(() => { });
     await passwordLocator.pressSequentially(
       this.accountConfig.microsoftAccount.password,
       { delay: Math.floor(Math.random() * 30) + 40 },
     );
     await this.humanDelay(1000, 2000);
 
-    await confirmPasswordLocator.click({ force: true }).catch(() => {});
+    await confirmPasswordLocator.click({ force: true }).catch(() => { });
     await confirmPasswordLocator.pressSequentially(
       this.accountConfig.microsoftAccount.password,
       { delay: Math.floor(Math.random() * 20) + 30 },
@@ -679,7 +677,7 @@ class MicrosoftBot {
         console.log("Clicked Yes on Stay signed in prompt.");
       }
 
-      await popup.waitForLoadState("networkidle").catch(() => {});
+      await popup.waitForLoadState("networkidle").catch(() => { });
       console.log("Sign In popup handled successfully");
     } catch (e) {
       if (e.message.includes("MICROSOFT_ERROR_PAGE")) throw e;
@@ -692,7 +690,7 @@ class MicrosoftBot {
 
     await this.page
       .waitForLoadState("domcontentloaded", { timeout: HARD_TIMEOUT })
-      .catch(() => {});
+      .catch(() => { });
     await this.waitForSpinnerGone(500);
 
     const deadline = Date.now() + HARD_TIMEOUT;
@@ -806,7 +804,7 @@ class MicrosoftBot {
     const errorWatcher = new Promise(async (resolve, reject) => {
       const deadline = Date.now() + TIMEOUT;
       while (!resolved && Date.now() < deadline) {
-        await this.page.waitForTimeout(2000).catch(() => {});
+        await this.page.waitForTimeout(2000).catch(() => { });
         if (resolved) break;
         if (await this.checkForError()) {
           return reject(
@@ -871,7 +869,7 @@ class MicrosoftBot {
       await this.page
         .locator('button:has-text("Use this address")')
         .click()
-        .catch(() => {});
+        .catch(() => { });
       await this.humanDelay(1000, 2000);
     }
 
@@ -942,8 +940,8 @@ class MicrosoftBot {
     console.log("[INFO] Start Trial clicked");
 
     await Promise.race([
-      this.page.waitForNavigation({ timeout: HARD_TIMEOUT }).catch(() => {}),
-      this.page.waitForLoadState("networkidle").catch(() => {}),
+      this.page.waitForNavigation({ timeout: HARD_TIMEOUT }).catch(() => { }),
+      this.page.waitForLoadState("networkidle").catch(() => { }),
     ]);
   }
 
@@ -1043,6 +1041,8 @@ class MicrosoftBot {
             "we are sorry, but we could not complete this",
             "try a different way",
             "We're checking to make sure we can offer you Microsoft products and services.",
+            "Verification code",
+            "Kode Verifikasi"
           ];
 
           const foundMarker = markers.find((m) => lowerText.includes(m));
