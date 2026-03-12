@@ -19,7 +19,7 @@ async function saveToDB(result, telegram_id) {
   }
 }
 
-async function processSingleAccount(accountConfig, index, total) {
+async function processSingleAccount(accountConfig, index, total, onPaymentSaved) {
   const profileName = `MS-Account-${Date.now()}-${index}`;
 
   console.log(
@@ -56,6 +56,9 @@ async function processSingleAccount(accountConfig, index, total) {
       console.log(
         `[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail} Password: ${accountConfig.microsoftAccount.password}`,
       );
+      if (onPaymentSaved) {
+        await onPaymentSaved();
+      }
       executionResult = {
         status: "SUCCESS",
         domainEmail: result.domainEmail,
