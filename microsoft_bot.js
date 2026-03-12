@@ -197,8 +197,9 @@ class MicrosoftBot {
     let targetOption = null;
 
     for (const search of searchList) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const option = this.page
-        .locator(".ms-Dropdown-item", { hasText: search })
+        .locator(".ms-Dropdown-item", { hasText: new RegExp(escaped, "i") })
         .first();
 
       if (await option.count()) {
