@@ -313,7 +313,6 @@ function initializeBotHandlers(bot) {
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             message += `Domain: <code>${escapeHTML(result.domainEmail)}</code>\n`;
             message += `Password: <code>${escapeHTML(result.domainPassword)}</code>\n`;
-            message += `VCC Balance: ${vcc.saldo}`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
             let message = `❌ <b>Failed [${currentIdx}] for ${escapeHTML(accountData.email)}</b>\n`;
