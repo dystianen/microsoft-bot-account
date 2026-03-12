@@ -1,7 +1,6 @@
 const { chromium } = require("playwright-core");
 const fs = require("fs");
 const config = require("./config");
-const date = require('date-and-time')
 
 const SPINNER_SELECTOR =
   '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
@@ -89,7 +88,7 @@ class MicrosoftBot {
     const postSpinnerError = await this.checkForError();
     if (postSpinnerError) {
       throw new Error(
-        `MICROSOFT_ERROR: ${postSpinnerError} (Detected after spinner)`,
+        `MICROSOFT_ERROR: ${postSpinnerError}`,
       );
     }
 
@@ -108,29 +107,80 @@ class MicrosoftBot {
   async clickButtonWithPossibleNames(names) {
     await this.waitForSpinnerGone();
 
+    // ✅ Partial keyword matching — pecah tiap name jadi kata-katanya
+    const keywords = names.flatMap((n) =>
+      n.trim().toLowerCase().split(/\s+/)
+    );
+    // Deduplicate
+    const uniqueKeywords = [...new Set(keywords)];
+
+    const found = await this.page.evaluate((keywords) => {
+      const candidates = [
+        ...document.querySelectorAll(
+          'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]'
+        ),
+      ];
+
+      const el = candidates.find((b) => {
+        const text = (
+          b.textContent ||
+          b.value ||
+          b.getAttribute("aria-label") ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+        // ✅ Cukup ada 1 keyword yang cocok, teks tidak terlalu panjang
+        return (
+          text.length > 0 &&
+          text.length < 60 &&
+          keywords.some((kw) => text.includes(kw))
+        );
+      });
+
+      if (!el) return null;
+
+      el.click();
+      return el.textContent?.trim() || el.value || "unknown";
+    }, uniqueKeywords);
+
+    if (found) {
+      console.log(`[INFO] Clicked: "${found}"`);
+      return true;
+    }
+
+    // Fallback: Playwright dengan pattern original
+    console.log("[WARN] JS click not found, fallback to Playwright...");
     const pattern = new RegExp(
-      names.map((n) => n.replace(/\s+/g, "\\s*")).join("|"),
-      "i",
+      names
+        .map((n) =>
+          n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*")
+        )
+        .join("|"),
+      "i"
     );
 
     const button = this.page.getByRole("button", { name: pattern }).first();
 
-    await this.runWithMonitor(
-      button.waitFor({ state: "visible", timeout: HARD_TIMEOUT }),
-    );
-
-    await this.randomMouseMove();
-    await this.humanDelay(1000, 2000);
-
     try {
+      await button.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
+      await this.randomMouseMove();
+      await this.humanDelay(1000, 2000);
       await button.click({ timeout: 8000, force: true });
-    } catch {
-      console.log("[INFO] Playwright click blocked, fallback to JS click...");
-      await button.evaluate((el) => el.click());
+      const clickedText = await button.textContent().catch(() => "unknown");
+      console.log(`[INFO] Clicked: "${clickedText?.trim()}"`);
+      return true;
+    } catch (err) {
+      const allButtons = await this.page.evaluate(() =>
+        [...document.querySelectorAll('button, [role="button"]')]
+          .map((b) => b.textContent?.trim())
+          .filter(Boolean)
+      );
+      console.error(`[ERROR] Button not found. Available buttons:`, allButtons);
+      console.error(`[ERROR] Looking for keywords:`, uniqueKeywords);
+      throw err;
     }
-
-    const clickedText = await button.textContent().catch(() => "unknown");
-    console.log(`[INFO] Clicked: "${clickedText?.trim()}"`);
   }
 
   getGenericLocator(keyword, elementType = "input") {
@@ -152,57 +202,46 @@ class MicrosoftBot {
   async selectDropdownByText(selector, text) {
     await this.waitForSpinnerGone();
 
-    // Pastikan dropdown sebelumnya sudah tertutup
-    await this.page
-      .waitForSelector(".ms-Dropdown-items", {
-        state: "detached",
-        timeout: 5000,
-      })
-      .catch(() => { });
-
     const dropdown = this.page.locator(selector).first();
-
     await this.runWithMonitor(
-      dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT }),
+      dropdown.waitFor({ state: "visible", timeout: HARD_TIMEOUT })
     );
 
     await dropdown.scrollIntoViewIfNeeded();
-    await this.randomMouseMove();
 
-    // buka dropdown
+    // Cek apakah native <select>
+    const tagName = await dropdown.evaluate(el => el.tagName.toLowerCase());
+
+    if (tagName === 'select') {
+      // Native select - langsung pakai selectOption
+      const searchList = Array.isArray(text) ? text : [text];
+      for (const t of searchList) {
+        try {
+          await dropdown.selectOption({ label: t });
+          console.log(`[DROPDOWN] Selected via native: "${t}"`);
+          return true;
+        } catch { continue; }
+      }
+    }
+
+    // Custom dropdown - buka dengan click
     await dropdown.click();
 
-    // tunggu dropdown container muncul
     const dropdownItems = this.page.locator(".ms-Dropdown-items");
     await this.runWithMonitor(
-      dropdownItems.waitFor({
-        state: "visible",
-        timeout: HARD_TIMEOUT,
-      }),
+      dropdownItems.waitFor({ state: "visible", timeout: HARD_TIMEOUT })
     );
 
-    // tunggu option muncul
-    const options = this.page.locator(".ms-Dropdown-item");
-    await this.runWithMonitor(
-      options.first().waitFor({
-        state: "visible",
-        timeout: HARD_TIMEOUT,
-      }),
-    );
-
-    // support text array atau string
     const searchList = Array.isArray(text)
-      ? text.map((t) => (t || "").toString().trim())
+      ? text.map(t => (t || "").toString().trim())
       : [(text || "").toString().trim()];
 
     let targetOption = null;
-
     for (const search of searchList) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const option = this.page
         .locator(".ms-Dropdown-item", { hasText: new RegExp(escaped, "i") })
         .first();
-
       if (await option.count()) {
         targetOption = option;
         break;
@@ -211,21 +250,26 @@ class MicrosoftBot {
 
     if (!targetOption) {
       console.warn(`[DROPDOWN] Option not found for: ${text}`);
+      await this.page.keyboard.press("Escape");
       return false;
     }
+
+    // ✅ Pakai dispatchEvent langsung - bypass overlay sepenuhnya
+    await targetOption.scrollIntoViewIfNeeded();
 
     const displayText = await targetOption.textContent().catch(() => text);
     console.log(`[DROPDOWN] Clicking: "${displayText?.trim()}"`);
 
-    await targetOption.scrollIntoViewIfNeeded();
-    await targetOption.click();
+    // Coba click biasa dulu, fallback ke JS click
+    try {
+      await targetOption.click({ timeout: 3000 });
+    } catch {
+      console.log("[DROPDOWN] Normal click blocked, using JS click...");
+      await targetOption.evaluate(el => el.click());
+    }
 
-    // tunggu dropdown tertutup
     await this.page
-      .waitForSelector(".ms-Dropdown-items", {
-        state: "detached",
-        timeout: 5000,
-      })
+      .waitForSelector(".ms-Dropdown-items", { state: "detached", timeout: 5000 })
       .catch(() => { });
 
     return true;
@@ -285,8 +329,8 @@ class MicrosoftBot {
     await this.waitForSpinnerGone();
   }
 
-  async clickBuildCartNextButton() {
-    console.log("[STEP 4] Clicking Next button");
+  async clickProductNextButton() {
+    console.log("[STEP 4] Clicking Next button on product page");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -306,11 +350,34 @@ class MicrosoftBot {
     await emailInput.pressSequentially(email, {
       delay: Math.floor(Math.random() * 20) + 30,
     });
-    await this.humanDelay(1000, 2000);
+
+    // Verifikasi isi field sudah benar — guard untuk koneksi proxy lambat
+    // kalau belum lengkap, clear dan ketik ulang char-by-char lebih lambat
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      await this.humanDelay(400, 700);
+      const currentValue = await emailInput.inputValue().catch(() => "");
+      if (currentValue.trim() === email.trim()) {
+        console.log(`[STEP 5] Email verified in input field.`);
+        break;
+      }
+      console.warn(
+        `[STEP 5] Email mismatch (attempt ${attempt}/${MAX_RETRIES}): expected "${email}", got "${currentValue}". Retrying...`,
+      );
+      await emailInput.selectText().catch(() => { });
+      await emailInput.fill("");
+      await this.humanDelay(200, 400);
+      for (const char of email) {
+        await this.page.keyboard.type(char, { delay: Math.random() * 40 + 50 });
+      }
+    }
+
+    await this.humanDelay(800, 1500);
+
   }
 
-  async clickCollectEmailNextButton() {
-    console.log("[STEP 6] Clicking Next for email");
+  async submitEmailAndWaitForSetup() {
+    console.log("[STEP 6] Submitting email and waiting for Setup button");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -335,7 +402,7 @@ class MicrosoftBot {
     }
   }
 
-  async clickConfirmEmailSetupAccountButton() {
+  async clickSetupAccountButton() {
     console.log("[STEP 7] Clicking Setup Account button");
     await this.clickButtonWithPossibleNames([
       "Setup Account",
@@ -489,8 +556,8 @@ class MicrosoftBot {
     ]);
   }
 
-  async clickUseThisAddressButton() {
-    console.log("[STEP 10] Checking for address confirmation button...");
+  async confirmAddressIfPrompted() {
+    console.log("[STEP 10] Checking for address confirmation prompt...");
 
     await this.waitForSpinnerGone();
 
@@ -506,6 +573,7 @@ class MicrosoftBot {
         ].join(", "),
       )
       .first();
+
 
     // Button ini optional — pakai isVisible() bukan waitFor agar tidak blocking
     const found = await combinedLocator.isVisible().catch(() => false);
@@ -623,6 +691,21 @@ class MicrosoftBot {
   async handleOptionalSignIn() {
     console.log("[STEP 11.5] Checking for optional Sign In prompt...");
 
+    // Helper: cek apakah sudah berada di halaman payment
+    const isOnPaymentPage = async () => {
+      return await Promise.any([
+        this.page.waitForURL(/payment|billing|checkout/i, { timeout: 1000 }),
+        this.page
+          .locator(
+            'input[id*="card" i], input[id*="accounttoken" i], input[aria-label*="card number" i], input[aria-label*="Nomor kartu" i]',
+          )
+          .first()
+          .waitFor({ state: "visible", timeout: 1000 }),
+      ])
+        .then(() => true)
+        .catch(() => false);
+    };
+
     try {
       await this.page.waitForLoadState("domcontentloaded");
       await this.waitForSpinnerGone();
@@ -637,6 +720,12 @@ class MicrosoftBot {
           );
         }
 
+        // Cek langsung apakah sudah di payment page — kalau iya skip semua retry
+        if (await isOnPaymentPage()) {
+          console.log("[STEP 11.5] Already on payment page, skipping Sign In check.");
+          return;
+        }
+
         signInDetected = await signInBtn
           .waitFor({ state: "visible", timeout: 5000 })
           .then(() => true)
@@ -648,6 +737,11 @@ class MicrosoftBot {
       }
 
       if (!signInDetected) {
+        // Final check sebelum give up: kalau payment page sudah muncul, skip
+        if (await isOnPaymentPage()) {
+          console.log("[STEP 11.5] Payment page detected after retries, skipping Sign In.");
+          return;
+        }
         console.log("No Sign In button detected, skipping...");
         return;
       }
@@ -781,7 +875,7 @@ class MicrosoftBot {
     console.log("VCC details filled");
   }
 
-  async clickSavePaymentButton() {
+  async submitPaymentAndWaitResult() {
     await this.clickButtonWithPossibleNames([
       "Save",
       "Simpan",
@@ -792,62 +886,104 @@ class MicrosoftBot {
 
     console.log("[INFO] Waiting for payment response...");
 
-    const TIMEOUT = 60000;
-    let resolved = false;
+    const waitForPaymentOutcome = async (timeout = 60000) => {
+      let resolved = false;
 
-    const makeWatcher = (promise, label) =>
-      promise
-        .then(() => {
-          resolved = true;
-          return label;
-        })
-        .catch(() => null);
+      const makeWatcher = (promise, label) =>
+        promise
+          .then(() => {
+            resolved = true;
+            return label;
+          })
+          .catch(() => null);
 
-    const errorWatcher = new Promise(async (resolve, reject) => {
-      const deadline = Date.now() + TIMEOUT;
-      while (!resolved && Date.now() < deadline) {
-        await this.page.waitForTimeout(2000).catch(() => { });
-        if (resolved) break;
-        if (await this.checkForError()) {
-          return reject(
-            new Error(
-              "MICROSOFT_ERROR_PAGE: Terdeteksi saat proses Save Payment.",
-            ),
-          );
+      // Selector address: EN + ID
+      const ADDRESS_SELECTOR = [
+        'button:has-text("Use this address")',
+        'button:has-text("Use address")',
+        'button:has-text("Gunakan alamat ini")',
+        'button[aria-label*="Use this address" i]',
+        'button[aria-label*="Gunakan alamat ini" i]',
+      ].join(", ");
+
+      const errorWatcher = new Promise(async (resolve, reject) => {
+        const deadline = Date.now() + timeout;
+        while (!resolved && Date.now() < deadline) {
+          await this.page.waitForTimeout(2000).catch(() => { });
+          if (resolved) break;
+          const err = await this.checkForError();
+          if (err) {
+            return reject(new Error(`MICROSOFT_ERROR_PAGE: ${err}`));
+          }
         }
-      }
-      resolve(null);
-    });
+        resolve(null);
+      });
 
-    const result = await Promise.race([
-      makeWatcher(
-        this.page.waitForSelector('span[data-automation-id="error-message"]', {
-          state: "visible",
-          timeout: TIMEOUT,
-        }),
-        "error",
-      ),
-      makeWatcher(
-        this.page.waitForSelector('button:has-text("Use this address")', {
-          state: "visible",
-          timeout: TIMEOUT,
-        }),
-        "address",
-      ),
-      makeWatcher(
-        this.page.waitForFunction(
-          () =>
-            window.location.href.includes("billing") ||
-            document.body.innerText.includes("Check your info"),
-          { timeout: TIMEOUT },
+      const result = await Promise.race([
+        makeWatcher(
+          this.page.waitForSelector('span[data-automation-id="error-message"]', {
+            state: "visible",
+            timeout,
+          }),
+          "error",
         ),
-        "success",
-      ),
-      errorWatcher,
-    ]);
+        makeWatcher(
+          this.page.waitForSelector(ADDRESS_SELECTOR, {
+            state: "visible",
+            timeout,
+          }),
+          "address",
+        ),
+        makeWatcher(
+          this.page.waitForFunction(
+            () => {
+              const hasCardInput = !!document.querySelector('input[id*="accounttoken" i], input[id*="card" i]');
+              const text = document.body.innerText.toLowerCase();
+              return !hasCardInput && (
+                text.includes("check your info") ||
+                text.includes("review your order") ||
+                text.includes("ordersummary") ||
+                window.location.href.includes("ordersummary")
+              );
+            },
+            { timeout },
+          ),
+          "success",
+        ),
+        errorWatcher,
+      ]);
 
-    resolved = true;
+      resolved = true;
+      return result;
+    };
+
+    let result = await waitForPaymentOutcome(60000);
     console.log(`[DEBUG] Payment result: ${result}`);
+
+    // Kalau ada address confirmation — klik, lalu tunggu outcome sebenarnya
+    if (result === "address") {
+      console.log("[INFO] Address confirmation prompt detected, clicking...");
+      const ADDRESS_SELECTOR = [
+        'button:has-text("Use this address")',
+        'button:has-text("Use address")',
+        'button:has-text("Gunakan alamat ini")',
+        'button[aria-label*="Use this address" i]',
+        'button[aria-label*="Gunakan alamat ini" i]',
+      ].join(", ");
+
+      try {
+        await this.page.locator(ADDRESS_SELECTOR).first().click({ force: true });
+        console.log("[INFO] Address confirmed, waiting for payment outcome...");
+      } catch (e) {
+        console.warn("[WARN] Could not click address button:", e.message);
+      }
+
+      await this.humanDelay(500, 1000);
+
+      // Tunggu lagi setelah klik address — cek apakah success atau card error
+      result = await waitForPaymentOutcome(30000);
+      console.log(`[DEBUG] Payment result (post-address): ${result}`);
+    }
 
     if (result === "success") {
       console.log("[INFO] Payment successfully saved.");
@@ -856,41 +992,26 @@ class MicrosoftBot {
           console.error("[CALLBACK ERROR]", e.message),
         );
       }
-    }
-
-    if (result === "error") {
+    } else if (result === "error") {
       const msg = await this.page
         .locator('span[data-automation-id="error-message"]')
         .first()
         .textContent()
         .catch(() => "Unknown payment error");
       throw new Error(`PAYMENT_DECLINED: ${msg?.trim()}`);
-    }
-
-    if (result === "address") {
-      await this.page
-        .locator('button:has-text("Use this address")')
-        .click()
-        .catch(() => { });
-      await this.humanDelay(1000, 2000);
-    }
-
-    if (result === null) {
-      console.warn(
-        "[WARN] Payment result timeout — tidak ada sinyal jelas dari halaman",
-      );
+    } else if (result === null) {
+      console.warn("[WARN] Payment result timeout — tidak ada sinyal jelas dari halaman");
     }
 
     console.log("[INFO] Payment step finished");
   }
 
-  async clickStartTrialButton() {
+  async acceptTrialAndStart() {
     console.log("[STEP 14] Clicking Start Trial button");
 
-    // Tunggu spinner hilang dulu
     await this.waitForSpinnerGone(800);
 
-    // Handle checkbox jika ada
+    // Handle checkbox
     try {
       const checkbox = this.page.locator('input[type="checkbox"]').first();
       if (await checkbox.count()) {
@@ -908,16 +1029,23 @@ class MicrosoftBot {
       console.log("[INFO] Checkbox handling skipped:", e.message);
     }
 
-    // Tunggu tombol enabled (poll terus sampai HARD_TIMEOUT)
+    // Tunggu tombol enabled — pakai partial keyword, bukan exact pattern
     console.log("[INFO] Waiting for Start Trial button to be enabled...");
     await this.page
       .waitForFunction(
         () => {
-          const btn = [...document.querySelectorAll("button")].find((b) =>
-            /start trial|try now|coba sekarang|mulai uji coba/i.test(
-              b.textContent,
-            ),
-          );
+          // ✅ Partial keywords — cukup ada salah satu kata ini
+          const keywords = ["start", "trial", "mulai", "coba", "try", "now", "uji"];
+
+          const btn = [...document.querySelectorAll("button")].find((b) => {
+            const text = b.textContent?.trim().toLowerCase() || "";
+            // Minimal 1 keyword cocok, dan button tidak disabled
+            return (
+              keywords.some((kw) => text.includes(kw)) &&
+              text.length < 60 // Hindari false positive dari button dengan teks panjang
+            );
+          });
+
           return (
             btn &&
             !btn.disabled &&
@@ -936,7 +1064,10 @@ class MicrosoftBot {
       "Mulai uji coba",
       "Try now",
       "Coba sekarang",
+      "Mulai percobaan",
+      "Start free trial",
       "Start",
+      "Mulai",
     ]);
 
     console.log("[INFO] Start Trial clicked");
@@ -947,7 +1078,7 @@ class MicrosoftBot {
     ]);
   }
 
-  async clickPostTrialNextButton() {
+  async clickGetStartedButton() {
     console.log("[STEP 15] Clicking final Next/Get Started button");
     await this.waitForSpinnerGone(800);
 
@@ -973,7 +1104,7 @@ class MicrosoftBot {
     await this.waitForPage();
   }
 
-  async extractDomainEmail() {
+  async extractFinalDomainAccount() {
     console.log("[STEP 16] Finalizing account data...");
 
     if (this.extractedDomainEmail && this.extractedDomainPassword) {
@@ -1114,10 +1245,12 @@ class MicrosoftBot {
     }
   }
 
-  async runStep(name, fn, delay = null) {
+  async executeStep(name, fn, delay = null) {
     console.log(`[STEP] ${name}`);
     this._currentStep = name;
     await fn();
+    // Tunggu spinner hilang & cek error secara otomatis setelah setiap step
+    await this.waitForSpinnerGone();
     const stepError = await this.checkForError();
     if (stepError) {
       throw new Error(
@@ -1130,78 +1263,84 @@ class MicrosoftBot {
   async run() {
     this._currentStep = "Initializing";
     try {
-      await this.runStep(
+      await this.executeStep(
         "Connecting to browser",
         () => this.connect(),
         [1000, 3000],
       );
-      await this.runStep(
+      await this.executeStep(
         "Opening Microsoft page",
         () => this.openMicrosoftPage(),
         [400, 800],
       );
-      await this.runStep(
-        "Building cart",
-        () => this.clickBuildCartNextButton(),
+      await this.executeStep(
+        "Clicking product page Next",
+        () => this.clickProductNextButton(),
         [300, 600],
       );
-      await this.runStep("Filling email", () => this.fillEmail(), [1000, 2500]);
-      await this.runStep(
-        "Confirming email",
-        () => this.clickCollectEmailNextButton(),
+      await this.executeStep("Filling email", () => this.fillEmail(), [1000, 2500]);
+      await this.executeStep(
+        "Submitting email & waiting for Setup",
+        () => this.submitEmailAndWaitForSetup(),
         [400, 800],
       );
-      await this.runStep(
-        "Setup account button",
-        () => this.clickConfirmEmailSetupAccountButton(),
+      await this.executeStep(
+        "Clicking Setup Account button",
+        () => this.clickSetupAccountButton(),
         [400, 800],
       );
-      await this.runStep(
+      await this.executeStep(
         "Filling basic info",
         () => this.fillBasicInfo(),
         [1500, 3500],
       );
-      await this.runStep(
-        "Confirming address (Stage 1)",
-        () => this.clickUseThisAddressButton(),
+      await this.executeStep(
+        "Confirming address (pre-password)",
+        () => this.confirmAddressIfPrompted(),
         [300, 600],
       );
-      await this.runStep(
+      await this.executeStep(
         "Filling password",
         () => this.fillPassword(),
         [400, 800],
       );
-      await this.runStep(
-        "Handling sign in",
+      await this.executeStep(
+        "Handling optional Sign In",
         () => this.handleOptionalSignIn(),
         [400, 800],
       );
-      await this.runStep(
-        "Going to payment page",
+      await this.executeStep(
+        "Navigating to payment page",
         () => this.goToPaymentPage(),
         [400, 800],
       );
-      await this.runStep(
-        "Filling payment details",
+      await this.executeStep(
+        "Filling VCC payment details",
         () => this.fillPaymentDetails(),
         [400, 800],
       );
-      await this.runStep("Saving payment", () => this.clickSavePaymentButton());
+      await this.executeStep(
+        "Submitting payment & waiting result",
+        () => this.submitPaymentAndWaitResult(),
+      );
+      await this.executeStep(
+        "Confirming address (post-payment)",
+        () => this.confirmAddressIfPrompted(),
+        [300, 600],
+      );
+      await this.executeStep(
+        "Accepting trial & clicking Start",
+        () => this.acceptTrialAndStart(),
+        [800, 1500],
+      );
+      await this.executeStep(
+        "Clicking Get Started",
+        () => this.clickGetStartedButton(),
+        [800, 1500],
+      );
 
-      this._currentStep = "Confirming address (Stage 2)";
-      await this.clickUseThisAddressButton();
-      await this.humanDelay(300, 600);
-
-      this._currentStep = "Clicking Start Trial";
-      await this.clickStartTrialButton();
-      await this.humanDelay(800, 1500);
-
-      this._currentStep = "Finishing trial setup";
-      await this.clickPostTrialNextButton();
-      await this.humanDelay(800, 1500);
-
-      this._currentStep = "Extracting domain email";
-      const { domainEmail, domainPassword } = await this.extractDomainEmail();
+      this._currentStep = "Extracting final domain account";
+      const { domainEmail, domainPassword } = await this.extractFinalDomainAccount();
 
       console.log("Automation completed successfully");
       return { success: true, domainEmail, domainPassword };
@@ -1212,7 +1351,7 @@ class MicrosoftBot {
         success: false,
         domainEmail: "",
         domainPassword: "",
-        error: `[${date.format(new Date(), 'DD MMM YYYY HH:mm', true)}] Step: ${step} - ${error.message}`,
+        error: `Step - ${step}\nError: ${error.message.trim()}`,
       };
     }
   }

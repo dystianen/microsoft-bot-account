@@ -283,17 +283,27 @@ function initializeBotHandlers(bot) {
         try {
           const onPaymentSaved = async () => {
             try {
-              const updatedVcc = await VCC.findByIdAndUpdate(
-                vcc._id,
+              // Atomic: hanya decrement kalau saldo > 0
+              const updatedVcc = await VCC.findOneAndUpdate(
+                { _id: vcc._id, saldo: { $gt: 0 } },  // ← guard condition
                 { $inc: { saldo: -1 } },
                 { new: true }
               );
-              if (!updatedVcc) return;
+
+              if (!updatedVcc) {
+                // Saldo sudah 0 atau VCC tidak ditemukan — langsung inactive
+                await VCC.findByIdAndUpdate(vcc._id, { status: "inactive" });
+                console.log(`[DB] VCC ****${vcc.cardNumber.slice(-4)} skipped (saldo habis), set inactive`);
+                return;
+              }
+
               console.log(`[DB] VCC ****${vcc.cardNumber.slice(-4)} saldo: ${vcc.saldo} → ${updatedVcc.saldo}`);
+
               if (updatedVcc.saldo <= 0) {
                 await VCC.findByIdAndUpdate(vcc._id, { status: "inactive" });
                 console.log(`[DB] VCC ****${vcc.cardNumber.slice(-4)} set inactive`);
               }
+
               vcc.saldo = updatedVcc.saldo;
             } catch (err) {
               console.error(`[DB] onPaymentSaved error:`, err.message);
