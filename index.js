@@ -20,8 +20,6 @@ async function saveToDB(result, telegram_id) {
 }
 
 async function processSingleAccount(accountConfig, index, total, onPaymentSaved) {
-  const profileName = `MS-Account-${Date.now()}-${index}`;
-
   console.log(
     `\n--- Starting Account ${index + 1} of ${total}: ${accountConfig.microsoftAccount.email} ---`,
   );
@@ -38,7 +36,7 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
       password: accountConfig.proxyPassword
     } : null;
 
-    currentProfileId = await adsPowerHelper.createProfile(profileName, proxyOverride);
+    currentProfileId = await adsPowerHelper.createProfile("", proxyOverride);
     console.log(`[Account ${index + 1}] Created profile: ${currentProfileId}`);
 
     console.log(`[Account ${index + 1}] Starting browser...`);
