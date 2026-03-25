@@ -604,7 +604,10 @@ function initializeBotHandlers(bot) {
       for (const line of lines) {
         const parts = line.split("|").map((s) => s.trim());
         if (parts.length >= 4) {
-          const existing = await VCC.findOne({ cardNumber: parts[0] });
+          const existing = await VCC.findOne({ 
+            cardNumber: parts[0],
+            telegram_id: chatId.toString()
+          });
           if (!existing) {
             const vcc = new VCC({
               cardNumber: parts[0],
