@@ -84,10 +84,10 @@ function initializeBotHandlers(bot) {
     reply_markup: {
       keyboard: [
         [{ text: "➕ Add Account" }, { text: "💳 Add VCC" }],
-        [{ text: "🚀 Generate" }, { text: "📊 Check VCC" }],
-        [{ text: "📜 History" }, { text: "⚙️ Config" }],
-        [{ text: "🧹 Reset Session" }, { text: "🗑️ Delete VCC" }],
-        [{ text: "🗑️ Delete Success" }],
+        [{ text: "🚀 Generate" }, { text: "🛑 Stop Queue" }],
+        [{ text: "📊 Check VCC" }, { text: "📜 History" }],
+        [{ text: "⚙️ Config" }, { text: "🧹 Reset Session" }],
+        [{ text: "🗑️ Delete VCC" }, { text: "🗑️ Delete Success" }],
       ],
       resize_keyboard: true,
     },
@@ -159,6 +159,26 @@ function initializeBotHandlers(bot) {
     bot.sendMessage(
       chatId,
       "Temporary session and pending accounts have been cleared.",
+      mainMenu,
+    );
+  });
+
+  bot.onText(/🛑 Stop Queue/, (msg) => {
+    const chatId = msg.chat.id;
+    const session = sessions[chatId];
+    if (!session || !session.running) {
+      return bot.sendMessage(
+        chatId,
+        "⚠️ No automation is currently running.",
+        mainMenu,
+      );
+    }
+    const remaining = session.accounts.length;
+    session.accounts = []; // clear the queue so no more tasks will be started
+    session.forceStop = true;
+    bot.sendMessage(
+      chatId,
+      `🛑 Stopping... Removed ${remaining} accounts from queue. Please wait for running tasks to finish.`,
       mainMenu,
     );
   });
@@ -491,11 +511,20 @@ function initializeBotHandlers(bot) {
         );
       } finally {
         session.running = false;
-        bot.sendMessage(
-          chatId,
-          "🏁 Finished processing session accounts.",
-          mainMenu,
-        );
+        if (session.forceStop) {
+          session.forceStop = false;
+          bot.sendMessage(
+            chatId,
+            "🛑 Queue processing stopped successfully.",
+            mainMenu,
+          );
+        } else {
+          bot.sendMessage(
+            chatId,
+            "🏁 Finished processing session accounts.",
+            mainMenu,
+          );
+        }
       }
     };
 
