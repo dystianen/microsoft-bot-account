@@ -234,30 +234,28 @@ function initializeBotHandlers(bot) {
     const options = {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Set Microsoft URL", callback_data: `set_url` }],
+          [{ text: "🌐 Set Microsoft URL", callback_data: `set_url` }],
           [
             {
-              text: `Concurrency: ${userConf.concurrencyLimit}`,
+              text: `🚀 Concurrency: ${userConf.concurrencyLimit}`,
               callback_data: `set_concurrency`,
             },
-          ],
-          [
             {
-              text: `Max Per VCC: ${userConf.maxAccountsPerPayment}`,
+              text: `💳 Max/VCC: ${userConf.maxAccountsPerPayment}`,
               callback_data: `set_max_vcc`,
             },
           ],
-          [{ text: "Set Proxy Username", callback_data: "set_proxy_user" }],
-          [{ text: "Set Proxy Password", callback_data: "set_proxy_pass" }],
           [
-            {
-              text: `Stop Point: ${userConf.stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}`,
-              callback_data: "set_stop_point",
-            },
+            { text: "👤 Proxy User", callback_data: "set_proxy_user" },
+            { text: "🔑 Proxy Pass", callback_data: "set_proxy_pass" },
           ],
           [
             {
-              text: `Target Plan: ${userConf.targetPlan || "E3"}`,
+              text: `🛑 Stop: ${userConf.stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}`,
+              callback_data: "set_stop_point",
+            },
+            {
+              text: `🎯 Plan: ${userConf.targetPlan || "E3"}`,
               callback_data: "set_target_plan",
             },
           ],
