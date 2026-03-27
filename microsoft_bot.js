@@ -400,7 +400,7 @@ class MicrosoftBot {
           // Wait for full load and a bit extra for hydration
           await this.page.waitForLoadState("load", { timeout: 30000 }).catch(() => { });
           await this.waitForSpinnerGone();
-          
+
           // Wait specifically for any button to ensure JS is likely ready
           await this.page.locator('button, [role="button"], a.btn').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => { });
           await this.humanDelay(1500, 2500); // Small grace period for event listeners to attach
@@ -517,141 +517,175 @@ class MicrosoftBot {
 
     await this.waitWithCheck(this.getGenericLocator("first"), HARD_TIMEOUT);
 
+    // Helper delay
+    const typeDelay = { delay: Math.floor(Math.random() * 20) + 30 };
+
     // Row 1: First name
     const firstLocator = this.getGenericLocator("first");
     await this.waitForVisible(firstLocator);
     await firstLocator.click();
-    await firstLocator.pressSequentially(this.accountConfig.microsoftAccount.firstName, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(500, 1000);
+    await firstLocator.pressSequentially(this.accountConfig.microsoftAccount.firstName, typeDelay);
+    await this.humanDelay(800, 1500);
 
-    // Row 1.5: Last name
+    // Last name
     const lastLocator = this.getGenericLocator("last");
     await this.waitForVisible(lastLocator);
     await lastLocator.click();
-    await lastLocator.pressSequentially(this.accountConfig.microsoftAccount.lastName, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(500, 1000);
+    await lastLocator.pressSequentially(this.accountConfig.microsoftAccount.lastName, typeDelay);
+    await this.humanDelay(800, 1500);
 
-    // Row 2: Company name, Company size
+    // Company
     const companyLocator = this.getGenericLocator("company");
     await this.waitForVisible(companyLocator);
     await companyLocator.click();
-    await companyLocator.pressSequentially(this.accountConfig.microsoftAccount.companyName, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
+    await companyLocator.pressSequentially(this.accountConfig.microsoftAccount.companyName, typeDelay);
     await this.humanDelay(1000, 2000);
 
+    // Company size
     await this.selectDropdownByText(
       'div[role="combobox"][id*="size" i], div[role="combobox"][data-testid*="size" i], select[id*="size" i]',
       this.accountConfig.microsoftAccount.companySize,
     );
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(800, 1500);
 
-    // Row 3: Business phone number
+    // Phone
     const phoneLocator = this.getGenericLocator("phone");
     await this.waitForVisible(phoneLocator);
     await phoneLocator.click();
-    await phoneLocator.pressSequentially(this.accountConfig.microsoftAccount.phone, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(500, 1000);
+    await phoneLocator.pressSequentially(this.accountConfig.microsoftAccount.phone, typeDelay);
+    await this.humanDelay(800, 1500);
 
-    // Row 4: Job title
+    // Job
     const jobLocator = this.getGenericLocator("job");
     await this.waitForVisible(jobLocator);
     await jobLocator.click();
-    await jobLocator.pressSequentially(this.accountConfig.microsoftAccount.jobTitle, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(500, 1000);
+    await jobLocator.pressSequentially(this.accountConfig.microsoftAccount.jobTitle, typeDelay);
+    await this.humanDelay(800, 1500);
 
-    // Row 5: Address line 1
+    // Address 1
     const addressLocator = this.getGenericLocator("address");
     await this.waitForVisible(addressLocator);
     await addressLocator.click();
-    await addressLocator.pressSequentially(this.accountConfig.microsoftAccount.address, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(800, 1500);
+    await addressLocator.pressSequentially(this.accountConfig.microsoftAccount.address, typeDelay);
+    await this.humanDelay(1000, 2000);
 
-    // Row 6: Address line 2 (Optional)
+    // Address 2 (lebih aman)
     const address2 = this.accountConfig.microsoftAccount.address2 || "";
-    const address2Locator = this.page.locator('input[id*="address2" i], input[id*="line2" i]').first();
-    if (await address2Locator.count() > 0) {
-      await address2Locator.click();
-      await address2Locator.pressSequentially(address2, {
-        delay: Math.floor(Math.random() * 20) + 30,
-      });
-      await this.humanDelay(500, 1000);
+    const address2Locator = this.page
+      .locator('input[id*="address2" i], input[id*="line2" i]')
+      .first();
+
+    if ((await address2Locator.count()) > 0) {
+      try {
+        await address2Locator.waitFor({ state: "visible", timeout: 3000 });
+        await address2Locator.click();
+        await address2Locator.pressSequentially(address2, typeDelay);
+        await this.humanDelay(800, 1500);
+      } catch {
+        console.log("Address2 not interactable, skip");
+      }
     }
 
-    // Row 7: City
+    // City (BALIK KE KEYBOARD → lebih stabil)
     const cityLocator = this.getGenericLocator("city");
     await this.waitForVisible(cityLocator);
     await cityLocator.click();
-    await cityLocator.pressSequentially(this.accountConfig.microsoftAccount.city, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
-    await this.humanDelay(500, 1000);
+    for (const char of this.accountConfig.microsoftAccount.city) {
+      await this.page.keyboard.type(char, { delay: Math.random() * 20 + 30 });
+    }
+    await this.humanDelay(1000, 2000);
 
-    // Row 8: State, Zip
-    await this.selectDropdownByText(
-      'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i], select[id*="state" i]',
-      this.accountConfig.microsoftAccount.state || "Alabama",
-    );
-    await this.humanDelay(500, 1000);
+    // 🔥 REGION (FIX UTAMA: support input + dropdown)
+    const regionInput = this.page
+      .locator('input[id*="region" i], input[id*="state" i]')
+      .first();
 
-    const zipLocator = this.page.locator('input[id*="postal" i], input[id*="zip" i]').first();
-    if (this.accountConfig.microsoftAccount.postalCode && await zipLocator.count() > 0) {
-      await zipLocator.click();
-      await zipLocator.pressSequentially(this.accountConfig.microsoftAccount.postalCode, {
-        delay: Math.floor(Math.random() * 20) + 30,
-      });
-      await this.humanDelay(500, 1000);
+    const regionIsInput = await regionInput
+      .waitFor({ state: "visible", timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (regionIsInput) {
+      await regionInput.click();
+      await regionInput.pressSequentially(
+        this.accountConfig.microsoftAccount.state || "Alabama",
+        { delay: Math.floor(Math.random() * 30) + 50 },
+      );
+      console.log("Region filled as input");
+    } else {
+      await this.selectDropdownByText(
+        'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i], select[id*="state" i]',
+        this.accountConfig.microsoftAccount.state || "Alabama",
+      );
     }
 
-    // Row 9: Country/Region
+    await this.humanDelay(1000, 2000);
+
+    // 🔥 POSTAL (BALIKIN locator lama)
+    const zipLocator = this.page
+      .locator(
+        'input[id*="postal" i], input[id*="zip" i], input[data-testid*="postal" i], input[data-testid*="zip" i]',
+      )
+      .first();
+
+    if (
+      this.accountConfig.microsoftAccount.postalCode &&
+      (await zipLocator.count()) > 0
+    ) {
+      try {
+        await zipLocator.click();
+        await zipLocator.pressSequentially(
+          this.accountConfig.microsoftAccount.postalCode,
+          typeDelay,
+        );
+        console.log("Postal filled");
+        await this.humanDelay(1000, 2000);
+      } catch {
+        console.log("Postal found but failed to fill");
+      }
+    } else {
+      console.log("Postal not found / not provided");
+    }
+
+    // Country
     await this.selectDropdownByText(
       'div[role="combobox"][id*="country" i], select[id*="country" i]',
       this.accountConfig.microsoftAccount.country || "United States",
     ).catch(() => { });
-    await this.humanDelay(500, 1000);
+    await this.humanDelay(800, 1500);
 
-    // Row 10: Website
+    // Website (jangan pakai "Select one")
     await this.selectDropdownByText(
       'div[role="combobox"][id*="website" i], div[role="combobox"][data-testid*="website" i], select[id*="website" i]',
-      ["No", "Tidak", "Select one"],
+      ["No", "Tidak"],
     );
-    await this.humanDelay(600, 1200);
+    await this.humanDelay(800, 1500);
 
-    // Partner checkbox
+    // Checkbox
     try {
       let partnerCheckbox = this.page.locator("#partner-checkbox");
+
       if ((await partnerCheckbox.count()) === 0) {
         partnerCheckbox = this.page.locator(
           'input[type="checkbox"][aria-label*="share my information" i]',
         );
       }
+
       if ((await partnerCheckbox.count()) > 0) {
         await partnerCheckbox.waitFor({ state: "visible", timeout: 10000 });
+
         if (!(await partnerCheckbox.isChecked())) {
           await this.randomMouseMove();
           await partnerCheckbox.check({ force: true });
-          console.log("Partner checkbox checked");
-        } else {
-          console.log("Partner checkbox already checked");
+          console.log("Checkbox checked");
         }
-      } else {
-        console.log("Partner checkbox not found, skipping...");
       }
     } catch (err) {
       console.log("Checkbox error:", err.message);
     }
 
-    await this.humanDelay(200, 500);
+    await this.humanDelay(300, 700);
+
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
