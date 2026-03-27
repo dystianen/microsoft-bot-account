@@ -255,6 +255,12 @@ function initializeBotHandlers(bot) {
               callback_data: "set_stop_point",
             },
           ],
+          [
+            {
+              text: `Target Plan: ${userConf.targetPlan || "E3"}`,
+              callback_data: "set_target_plan",
+            },
+          ],
         ],
       },
     };
@@ -266,7 +272,8 @@ function initializeBotHandlers(bot) {
       `Concurrency: ${userConf.concurrencyLimit}\n` +
       `Max Accounts/VCC: ${userConf.maxAccountsPerPayment}\n` +
       `Proxy User: <code>${userConf.proxyUsername}</code>\n` +
-      `Stop Point: <b>${userConf.stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}</b>`,
+      `Stop Point: <b>${userConf.stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}</b>\n` +
+      `Target Plan: <b>${userConf.targetPlan || "E3"}</b>`,
       { parse_mode: "HTML", ...options },
     );
   });
@@ -324,6 +331,23 @@ function initializeBotHandlers(bot) {
         `Stop point updated to: ${stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}`,
         mainMenu,
       );
+    } else if (data === "set_target_plan") {
+      const options = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "E1", callback_data: "plan_E1" }],
+            [{ text: "E3", callback_data: "plan_E3" }],
+            [{ text: "E5", callback_data: "plan_E5" }],
+          ],
+        },
+      };
+      bot.sendMessage(chatId, "Choose the target Office 365 Plan:", options);
+    } else if (data.startsWith("plan_")) {
+      const plan = data.replace("plan_", "");
+      const userConf = await getUserConfig(chatId);
+      userConf.targetPlan = plan;
+      await userConf.save();
+      bot.sendMessage(chatId, `Target plan updated to: ${plan}`, mainMenu);
     }
   });
 
@@ -409,6 +433,7 @@ function initializeBotHandlers(bot) {
           proxyUsername: userConf.proxyUsername,
           proxyPassword: userConf.proxyPassword,
           stopPoint: userConf.stopPoint,
+          targetPlan: userConf.targetPlan,
         };
 
         // ── Capture vcc._id saja — bukan seluruh object ──────────────────────────

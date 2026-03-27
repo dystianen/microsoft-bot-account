@@ -353,12 +353,78 @@ class MicrosoftBot {
     console.log("[STEP 2] Opening Microsoft page");
 
     const url = this.accountConfig.microsoftUrl || config.microsoftUrl;
+    // Speed up initial navigation — wait for commit then poll for elements
     await this.page.goto(url, {
-      waitUntil: "domcontentloaded",
+      waitUntil: "commit",
       timeout: HARD_TIMEOUT,
     });
+  }
 
-    await this.waitForSpinnerGone();
+  async clickTryForFreeOnTargetCard() {
+    const targetPlan = this.accountConfig.targetPlan || "E3";
+    console.log(`[STEP 3] Clicking Try for free for target plan: ${targetPlan}`);
+
+    const cards = this.page.locator('div[ocr-component-name="card-plan-detail"]');
+    // Poll fast for cards without waiting for domcontentloaded
+    const cardsVisible = await cards.first().waitFor({ state: "visible", timeout: 30000 }).then(() => true).catch(() => false);
+
+    if (!cardsVisible) {
+      console.log("[INFO] No cards visible, checking if we're scanning global buttons...");
+    } else {
+      const count = await cards.count();
+      let targetCard = null;
+
+      // Greedily search for title in cards
+      for (let i = 0; i < count; i++) {
+        const card = cards.nth(i);
+        const title = await card.locator('.oc-product-title').first().textContent().catch(() => "");
+        if (title.toUpperCase().includes(targetPlan.toUpperCase())) {
+          targetCard = card;
+          break;
+        }
+      }
+
+      const cardToUse = targetCard || (count >= 2 ? cards.nth(1) : cards.first());
+      const tryFreeBtn = cardToUse.locator('a:has-text("Try for free"), a:has-text("Coba gratis")').first();
+
+      if (await tryFreeBtn.count() > 0) {
+        console.log(`[INFO] Clicking "Try for free" (Target: ${targetPlan})...`);
+        const [popup] = await Promise.all([
+          this.page.context().waitForEvent("page", { timeout: 30000 }).catch(() => null),
+          tryFreeBtn.click({ force: true }),
+        ]);
+
+        if (popup) {
+          this.page = popup;
+          console.log("[INFO] Switched to new tab. Waiting for content settle...");
+          // Wait for full load and a bit extra for hydration
+          await this.page.waitForLoadState("load", { timeout: 30000 }).catch(() => { });
+          await this.waitForSpinnerGone();
+          
+          // Wait specifically for any button to ensure JS is likely ready
+          await this.page.locator('button, [role="button"], a.btn').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => { });
+          await this.humanDelay(1500, 2500); // Small grace period for event listeners to attach
+          return;
+        }
+      }
+    }
+
+    // Fallback global search if cards not found or button not in card
+    console.log("[INFO] Scanning for global 'Try for free' button...");
+    const globalBtn = this.page.locator('a:has-text("Try for free"), a:has-text("Coba gratis"), button:has-text("Try for free")').first();
+    const [popupGlobal] = await Promise.all([
+      this.page.context().waitForEvent("page", { timeout: 30000 }).catch(() => null),
+      globalBtn.click({ force: true }).catch(() => { }),
+    ]);
+
+    if (popupGlobal) {
+      this.page = popupGlobal;
+      console.log("[INFO] Switched to new tab (global click). Waiting for content settle...");
+      await this.page.waitForLoadState("load", { timeout: 30000 }).catch(() => { });
+      await this.waitForSpinnerGone();
+      await this.page.locator('button, [role="button"], a.btn').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => { });
+      await this.humanDelay(1500, 2500);
+    }
   }
 
   async clickProductNextButton() {
@@ -1314,6 +1380,11 @@ class MicrosoftBot {
         "Opening Microsoft page",
         () => this.openMicrosoftPage(),
         [400, 800],
+      );
+      await this.executeStep(
+        "Clicking Try for free for target plan",
+        () => this.clickTryForFreeOnTargetCard(),
+        [500, 1000],
       );
       await this.executeStep(
         "Clicking product page Next",
