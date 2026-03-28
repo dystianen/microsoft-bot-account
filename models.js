@@ -10,7 +10,7 @@ const SuccessAccountSchema = new mongoose.Schema({
 });
 
 const VCCSchema = new mongoose.Schema({
-  cardNumber: { type: String, required: true, unique: true },
+  cardNumber: { type: String, required: true },
   cvv: { type: String, required: true },
   expMonth: { type: String, required: true },
   expYear: { type: String, required: true },
@@ -19,6 +19,9 @@ const VCCSchema = new mongoose.Schema({
   telegram_id: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
 });
+
+// Compound unique index: same user can't add same card twice, but different users can share.
+VCCSchema.index({ cardNumber: 1, telegram_id: 1 }, { unique: true });
 
 const UserConfigSchema = new mongoose.Schema({
   telegram_id: { type: String, required: true, unique: true },

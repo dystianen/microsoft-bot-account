@@ -575,18 +575,31 @@ function initializeBotHandlers(bot) {
       for (const line of lines) {
         const parts = line.split("|").map((s) => s.trim());
         if (parts.length >= 4) {
-          const existing = await VCC.findOne({ cardNumber: parts[0] });
+          // Now check for existing VCC for this SPECIFIC user
+          const existing = await VCC.findOne({
+            cardNumber: parts[0],
+            telegram_id: chatId.toString(),
+          });
           if (!existing) {
-            const vcc = new VCC({
-              cardNumber: parts[0],
-              cvv: parts[1],
-              expMonth: parts[2],
-              expYear: parts[3],
-              saldo: userConf.maxAccountsPerPayment,
-              telegram_id: chatId.toString(),
-            });
-            await vcc.save();
-            added++;
+            try {
+              const vcc = new VCC({
+                cardNumber: parts[0],
+                cvv: parts[1],
+                expMonth: parts[2],
+                expYear: parts[3],
+                saldo: userConf.maxAccountsPerPayment,
+                telegram_id: chatId.toString(),
+              });
+              await vcc.save();
+              added++;
+            } catch (err) {
+              if (err.code === 11000) {
+                // Secondary check for duplicate key error (race conditions)
+                duplicates++;
+              } else {
+                throw err;
+              }
+            }
           } else {
             duplicates++;
           }
