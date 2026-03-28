@@ -445,12 +445,10 @@ class MicrosoftBot {
     await this.waitForVisible(emailInput);
     await this.randomMouseMove();
     await emailInput.click();
-    await emailInput.pressSequentially(email, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
+    await emailInput.fill(email);
 
     // Verifikasi isi field sudah benar — guard untuk koneksi proxy lambat
-    // kalau belum lengkap, clear dan ketik ulang char-by-char lebih lambat
+    // jika belum lengkap, pakai insertText (seperti copas)
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       await this.humanDelay(400, 700);
@@ -460,14 +458,12 @@ class MicrosoftBot {
         break;
       }
       console.warn(
-        `[STEP 5] Email mismatch (attempt ${attempt}/${MAX_RETRIES}): expected "${email}", got "${currentValue}". Retrying...`,
+        `[STEP 5] Email mismatch (attempt ${attempt}/${MAX_RETRIES}): expected "${email}", got "${currentValue}". Retrying with insertText...`,
       );
-      await emailInput.selectText().catch(() => { });
       await emailInput.fill("");
       await this.humanDelay(200, 400);
-      for (const char of email) {
-        await this.page.keyboard.type(char, { delay: Math.random() * 40 + 50 });
-      }
+      await emailInput.focus();
+      await this.page.keyboard.insertText(email);
     }
 
     await this.humanDelay(800, 1500);
@@ -524,21 +520,21 @@ class MicrosoftBot {
     const firstLocator = this.getGenericLocator("first");
     await this.waitForVisible(firstLocator);
     await firstLocator.click();
-    await firstLocator.pressSequentially(this.accountConfig.microsoftAccount.firstName, typeDelay);
+    await firstLocator.fill(this.accountConfig.microsoftAccount.firstName);
     await this.humanDelay(800, 1500);
 
     // Last name
     const lastLocator = this.getGenericLocator("last");
     await this.waitForVisible(lastLocator);
     await lastLocator.click();
-    await lastLocator.pressSequentially(this.accountConfig.microsoftAccount.lastName, typeDelay);
+    await lastLocator.fill(this.accountConfig.microsoftAccount.lastName);
     await this.humanDelay(800, 1500);
 
     // Company
     const companyLocator = this.getGenericLocator("company");
     await this.waitForVisible(companyLocator);
     await companyLocator.click();
-    await companyLocator.pressSequentially(this.accountConfig.microsoftAccount.companyName, typeDelay);
+    await companyLocator.fill(this.accountConfig.microsoftAccount.companyName);
     await this.humanDelay(1000, 2000);
 
     // Company size
@@ -552,21 +548,21 @@ class MicrosoftBot {
     const phoneLocator = this.getGenericLocator("phone");
     await this.waitForVisible(phoneLocator);
     await phoneLocator.click();
-    await phoneLocator.pressSequentially(this.accountConfig.microsoftAccount.phone, typeDelay);
+    await phoneLocator.fill(this.accountConfig.microsoftAccount.phone);
     await this.humanDelay(800, 1500);
 
     // Job
     const jobLocator = this.getGenericLocator("job");
     await this.waitForVisible(jobLocator);
     await jobLocator.click();
-    await jobLocator.pressSequentially(this.accountConfig.microsoftAccount.jobTitle, typeDelay);
+    await jobLocator.fill(this.accountConfig.microsoftAccount.jobTitle);
     await this.humanDelay(800, 1500);
 
     // Address 1
     const addressLocator = this.getGenericLocator("address");
     await this.waitForVisible(addressLocator);
     await addressLocator.click();
-    await addressLocator.pressSequentially(this.accountConfig.microsoftAccount.address, typeDelay);
+    await addressLocator.fill(this.accountConfig.microsoftAccount.address);
     await this.humanDelay(1000, 2000);
 
     // Address 2 (lebih aman)
@@ -579,7 +575,7 @@ class MicrosoftBot {
       try {
         await address2Locator.waitFor({ state: "visible", timeout: 3000 });
         await address2Locator.click();
-        await address2Locator.pressSequentially(address2, typeDelay);
+        await address2Locator.fill(address2);
         await this.humanDelay(800, 1500);
       } catch {
         console.log("Address2 not interactable, skip");
@@ -589,10 +585,7 @@ class MicrosoftBot {
     // City (BALIK KE KEYBOARD → lebih stabil)
     const cityLocator = this.getGenericLocator("city");
     await this.waitForVisible(cityLocator);
-    await cityLocator.click();
-    for (const char of this.accountConfig.microsoftAccount.city) {
-      await this.page.keyboard.type(char, { delay: Math.random() * 20 + 30 });
-    }
+    await cityLocator.fill(this.accountConfig.microsoftAccount.city);
     await this.humanDelay(1000, 2000);
 
     // 🔥 REGION (FIX UTAMA: support input + dropdown)
@@ -606,10 +599,8 @@ class MicrosoftBot {
       .catch(() => false);
 
     if (regionIsInput) {
-      await regionInput.click();
-      await regionInput.pressSequentially(
-        this.accountConfig.microsoftAccount.state || "Alabama",
-        { delay: Math.floor(Math.random() * 30) + 50 },
+      await regionInput.fill(
+        this.accountConfig.microsoftAccount.state || "Alabama"
       );
       console.log("Region filled as input");
     } else {
@@ -634,10 +625,7 @@ class MicrosoftBot {
     ) {
       try {
         await zipLocator.click();
-        await zipLocator.pressSequentially(
-          this.accountConfig.microsoftAccount.postalCode,
-          typeDelay,
-        );
+        await zipLocator.fill(this.accountConfig.microsoftAccount.postalCode);
         console.log("Postal filled");
         await this.humanDelay(1000, 2000);
       } catch {
@@ -794,17 +782,11 @@ class MicrosoftBot {
     await this.waitForVisible(passwordLocator);
     await this.randomMouseMove();
     await passwordLocator.click({ force: true }).catch(() => { });
-    await passwordLocator.pressSequentially(
-      this.accountConfig.microsoftAccount.password,
-      { delay: Math.floor(Math.random() * 30) + 40 },
-    );
+    await passwordLocator.fill(this.accountConfig.microsoftAccount.password);
     await this.humanDelay(1000, 2000);
 
     await confirmPasswordLocator.click({ force: true }).catch(() => { });
-    await confirmPasswordLocator.pressSequentially(
-      this.accountConfig.microsoftAccount.password,
-      { delay: Math.floor(Math.random() * 20) + 30 },
-    );
+    await confirmPasswordLocator.fill(this.accountConfig.microsoftAccount.password);
     await this.humanDelay(1000, 2000);
 
     await this.clickButtonWithPossibleNames([
@@ -978,9 +960,7 @@ class MicrosoftBot {
 
     console.log("Typing card number...");
     await cardLocator.click();
-    await cardLocator.pressSequentially(this.accountConfig.payment.cardNumber, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
+    await cardLocator.fill(this.accountConfig.payment.cardNumber);
     await this.humanDelay(1500, 3000);
 
     console.log("Typing CVV...");
@@ -990,9 +970,7 @@ class MicrosoftBot {
       )
       .first();
     await cvvLocator.click();
-    await cvvLocator.pressSequentially(this.accountConfig.payment.cvv, {
-      delay: Math.floor(Math.random() * 20) + 30,
-    });
+    await cvvLocator.fill(this.accountConfig.payment.cvv);
     await this.humanDelay(1000, 2000);
 
     let expMonth = this.accountConfig.payment.expMonth.toString();
