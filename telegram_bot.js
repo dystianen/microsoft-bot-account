@@ -23,7 +23,7 @@ async function startBot() {
     // Move the initialization of everything that depends on 'bot' inside
     initializeBotHandlers(bot);
 
-    console.log("Telegram Bot with MongoDB (ms365bot) startedd.");
+    console.log("Telegram Bot with MongoDB (ms365bot) started.");
   } catch (err) {
     console.error("Failed to start bot:", err.message);
     process.exit(1);
@@ -101,7 +101,7 @@ function initializeBotHandlers(bot) {
 
     bot.sendMessage(
       chatId,
-      "Welcome to Microsoft Bot! 🤖 (MongoDB Powered)\n\nAdd accounts to the session, and they will be cleared once processed or manually reset.",
+      "Welcome to Microsoft Bott! 🤖 (MongoDB Powered)\n\nAdd accounts to the session, and they will be cleared once processed or manually reset.",
       mainMenu,
     );
   });
