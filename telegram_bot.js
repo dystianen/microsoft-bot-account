@@ -23,7 +23,7 @@ async function startBot() {
     // Move the initialization of everything that depends on 'bot' inside
     initializeBotHandlers(bot);
 
-    console.log("Telegram Bot with MongoDB (ms365bot) started.");
+    console.log("Telegram Bot with MongoDB (ms365bot) startedd.");
   } catch (err) {
     console.error("Failed to start bot:", err.message);
     process.exit(1);
