@@ -101,7 +101,7 @@ function initializeBotHandlers(bot) {
 
     bot.sendMessage(
       chatId,
-      "Welcome to Microsoft Bott! 🤖 (MongoDB Powered)\n\nAdd accounts to the session, and they will be cleared once processed or manually reset.",
+      "Welcome to Microsoft Bot! 🤖 (MongoDB Powered)\n\nAdd accounts to the session, and they will be cleared once processed or manually reset.",
       mainMenu,
     );
   });
