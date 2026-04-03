@@ -4,6 +4,7 @@ const { processSingleAccount } = require("./index");
 const connectDB = require("./db");
 const { SuccessAccount, VCC, UserConfig } = require("./models");
 const date = require("date-and-time");
+const adsPowerHelper = require("./adspower_helper");
 
 // Wrap in an async function to allow awaiting connection
 async function startBot() {
@@ -375,6 +376,16 @@ function initializeBotHandlers(bot) {
       return bot.sendMessage(
         chatId,
         "No active VCCs with balance found in database.",
+      );
+    }
+    
+    // --- AdsPower Connection Check ---
+    const isAdsPowerConnected = await adsPowerHelper.checkConnection();
+    if (!isAdsPowerConnected) {
+      return bot.sendMessage(
+        chatId,
+        "🚫 <b>Error:</b> AdsPower belum dibuka di VPS. Silakan buka aplikasi AdsPower terlebih dahulu dan pastikan Local API sudah aktif sebelum menjalankan bot.",
+        { parse_mode: "HTML", ...mainMenu }
       );
     }
 

@@ -10,6 +10,17 @@ class AdsPowerHelper {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
+  async checkConnection() {
+    try {
+      await axios.get(`${this.baseUrl}/api/v1/status`, {
+        timeout: 2000,
+      });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   randomUserAgent() {
     // Gunakan versi Chrome yang lebih recent dan realistis
     const chromeVersions = ["124", "125", "126", "127", "128", "145"];
@@ -69,6 +80,11 @@ class AdsPowerHelper {
 
       return response.data.data.id;
     } catch (error) {
+      if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
+        throw new Error(
+          "Could not connect to AdsPower Local API. Please ensure AdsPower is open and running on your VPS.",
+        );
+      }
       if (error.response) {
         console.error(
           "AdsPower Error Response:",
@@ -112,6 +128,11 @@ class AdsPowerHelper {
         debugPort: response.data?.data?.debug_port,
       };
     } catch (error) {
+      if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
+        throw new Error(
+          "Could not connect to AdsPower Local API. Please ensure AdsPower is open and running on your VPS.",
+        );
+      }
       console.error("Error starting browser:", error.message);
       throw error;
     }
