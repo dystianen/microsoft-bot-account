@@ -13,10 +13,19 @@ class AdsPowerHelper {
   async checkConnection() {
     try {
       await axios.get(`${this.baseUrl}/api/v1/status`, {
-        timeout: 2000,
+        timeout: 3000,
+        headers: {
+          Authorization: `Bearer ${config.adsPower.apiKey}`,
+          "api-key": config.adsPower.apiKey,
+        },
       });
       return true;
     } catch (error) {
+      // If the server responds with ANY status code (404, 401, etc.), the connection exists.
+      if (error.response) {
+        return true;
+      }
+      console.error(`[AdsPower Check] Connection failed to ${this.baseUrl}:`, error.message);
       return false;
     }
   }
