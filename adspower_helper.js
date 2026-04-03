@@ -23,7 +23,7 @@ class AdsPowerHelper {
 
   randomUserAgent() {
     // Gunakan versi Chrome yang lebih recent dan realistis
-    const chromeVersions = ["124", "125", "126", "127", "128", "145"];
+    const chromeVersions = ["124", "125", "126", "127", "128", "145", "146"];
     const version =
       chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
     const minor = this.randomInt(0, 9999);
