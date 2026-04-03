@@ -48,7 +48,6 @@ class MicrosoftBot {
     if (!text) return;
     await locator.click({ force: true }).catch(() => {});
     await this.humanDelay(300);
-    await locator.fill(text);
     await locator.pressSequentially(text, {
       delay: Math.floor(Math.random() * 50) + 40,
     });
