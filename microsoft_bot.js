@@ -653,11 +653,11 @@ class MicrosoftBot {
     }
 
     // Country
-    await this.selectDropdownByText(
-      'div[role="combobox"][id*="country" i], select[id*="country" i]',
-      this.accountConfig.microsoftAccount.country || "United States",
-    ).catch(() => { });
-    await this.humanDelay(800, 1500);
+    // await this.selectDropdownByText(
+    //   'div[role="combobox"][id*="country" i], select[id*="country" i]',
+    //   this.accountConfig.microsoftAccount.country || "United States",
+    // ).catch(() => { });
+    // await this.humanDelay(800, 1500);
 
     // Website (jangan pakai "Select one")
     await this.selectDropdownByText(
