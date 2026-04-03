@@ -545,8 +545,8 @@ function initializeBotHandlers(bot) {
             pendingPromises.add(promise);
 
             if (session.accounts.length > 0 || activeWorkers < maxWorkers) {
-              console.log(`[Queue] Waiting 60s before next account...`);
-              await new Promise((r) => setTimeout(r, 60000));
+              console.log(`[Queue] Waiting 20s before next account...`);
+              await new Promise((r) => setTimeout(r, 20000));
             }
           } else if (activeWorkers === 0 && session.accounts.length === 0) {
             break;
