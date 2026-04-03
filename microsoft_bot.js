@@ -34,7 +34,7 @@ class MicrosoftBot {
 
   async humanDelay(value = 100) {
     // const delay = Math.floor(Math.random() * (max - min + 1) + min);
-    await this.page.waitForTimeout(value);
+    await this.page.waitForTimeout(value + 1000);
   }
 
   async humanFill(locator, text) {
