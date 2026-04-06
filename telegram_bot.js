@@ -75,6 +75,7 @@ function initializeBotHandlers(bot) {
         proxyUsername: config.proxy.username,
         proxyPassword: config.proxy.password,
         stopPoint: "full",
+        headless: config.headless,
       });
       await userConf.save();
     }
@@ -259,6 +260,12 @@ function initializeBotHandlers(bot) {
               callback_data: "set_target_plan",
             },
           ],
+          [
+            {
+              text: `👁️ Headless: ${userConf.headless ? "Active" : "Inactive"}`,
+              callback_data: `toggle_headless`,
+            },
+          ],
         ],
       },
     };
@@ -271,7 +278,8 @@ function initializeBotHandlers(bot) {
       `Max Accounts/VCC: ${userConf.maxAccountsPerPayment}\n` +
       `Proxy User: <code>${userConf.proxyUsername}</code>\n` +
       `Stop Point: <b>${userConf.stopPoint === "vcc_success" ? "VCC Success" : "Full Step"}</b>\n` +
-      `Target Plan: <b>${userConf.targetPlan || "E3"}</b>`,
+      `Target Plan: <b>${userConf.targetPlan || "E3"}</b>\n` +
+      `<b>Headless Mode:</b> <code>${userConf.headless ? "Active (No window)" : "Inactive (Visible window)"}</code>\n`,
       { parse_mode: "HTML", ...options },
     );
   });
@@ -346,6 +354,15 @@ function initializeBotHandlers(bot) {
       userConf.targetPlan = plan;
       await userConf.save();
       bot.sendMessage(chatId, `Target plan updated to: ${plan}`, mainMenu);
+    } else if (data === "toggle_headless") {
+      const userConf = await getUserConfig(chatId);
+      userConf.headless = !userConf.headless;
+      await userConf.save();
+      bot.sendMessage(
+        chatId,
+        `✅ <b>Headless Mode:</b> ${userConf.headless ? "Active" : "Inactive"}\nBrowser window now: ${userConf.headless ? "Hidden" : "Visible"}`,
+        { parse_mode: "HTML", ...mainMenu }
+      );
     }
   });
 
@@ -432,6 +449,7 @@ function initializeBotHandlers(bot) {
           proxyPassword: userConf.proxyPassword,
           stopPoint: userConf.stopPoint,
           targetPlan: userConf.targetPlan,
+          headless: userConf.headless,
         };
 
         // ── Capture vcc._id saja — bukan seluruh object ──────────────────────────

@@ -32,6 +32,7 @@ const UserConfigSchema = new mongoose.Schema({
   proxyPassword: { type: String, default: "" },
   stopPoint: { type: String, default: "full" }, // "vcc_success" or "full"
   targetPlan: { type: String, default: "E3" }, // "E1", "E3", "E5" etc
+  headless: { type: Boolean, default: false }, // Default window visible for user
   updatedAt: { type: Date, default: Date.now },
 });
 
