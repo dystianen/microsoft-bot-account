@@ -1,6 +1,7 @@
 const { chromium } = require("playwright-core");
 const fs = require("fs");
 const config = require("./config");
+const remoteLogger = require("./remote_logger");
 
 const SPINNER_SELECTOR =
   '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
@@ -17,6 +18,13 @@ class MicrosoftBot {
     this.accountConfig = accountConfig;
     this.onPaymentSaved = onPaymentSaved;
     this._paymentSavedTriggered = false;
+    this.currentStep = 0;
+  }
+
+  async _logStep(stepNum, msg) {
+    this.currentStep = stepNum;
+    const email = this.accountConfig.microsoftAccount.email;
+    await remoteLogger.logStep(email, stepNum, msg);
   }
 
   async triggerPaymentSaved() {
@@ -389,7 +397,7 @@ class MicrosoftBot {
   // ─── Steps ───────────────────────────────────────────────────────────────────
 
   async connect() {
-    console.log("[STEP 1] Connecting to browser");
+    await this._logStep(1, "Menghubungkan ke browser...");
 
     this.browser = await Promise.race([
       chromium.connectOverCDP(this.wsUrl),
@@ -437,7 +445,7 @@ class MicrosoftBot {
   }
 
   async openMicrosoftPage() {
-    console.log("[STEP 2] Opening Microsoft page");
+    await this._logStep(2, "Membuka halaman Microsoft...");
 
     const url = this.accountConfig.microsoftUrl || config.microsoftUrl;
     // Speed up initial navigation — wait for commit then poll for elements
@@ -449,9 +457,7 @@ class MicrosoftBot {
 
   async clickTryForFreeOnTargetCard() {
     const targetPlan = this.accountConfig.targetPlan || "E3";
-    console.log(
-      `[STEP 3] Clicking Try for free for target plan: ${targetPlan}`,
-    );
+    await this._logStep(3, `Memilih paket trial: ${targetPlan}`);
 
     const cards = this.page.locator(
       'div[ocr-component-name="card-plan-detail"]',
@@ -560,7 +566,7 @@ class MicrosoftBot {
   }
 
   async clickProductNextButton() {
-    console.log("[STEP 4] Clicking Next button on product page");
+    await this._logStep(4, "Mengklik tombol Selanjutnya...");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -571,7 +577,7 @@ class MicrosoftBot {
 
   async fillEmail() {
     const email = this.accountConfig.microsoftAccount.email;
-    console.log("[STEP 5] Filling email:", email);
+    await this._logStep(5, `Mengisi email: ${email}`);
 
     const emailInput = this.getGenericLocator("email");
     await this.waitForVisible(emailInput);
@@ -602,7 +608,7 @@ class MicrosoftBot {
   }
 
   async submitEmailAndWaitForSetup() {
-    console.log("[STEP 6] Submitting email and waiting for Setup button");
+    await this._logStep(6, "Submit email & menunggu tombol Setup...");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -628,7 +634,7 @@ class MicrosoftBot {
   }
 
   async clickSetupAccountButton() {
-    console.log("[STEP 7] Clicking Setup Account button");
+    await this._logStep(7, "Mengklik tombol Setup Account...");
     await this.clickButtonWithPossibleNames([
       "Setup Account",
       "Setup",
@@ -641,7 +647,7 @@ class MicrosoftBot {
   }
 
   async fillBasicInfo() {
-    console.log("[STEP 8] Filling basic info");
+    await this._logStep(8, "Mengisi informasi dasar akun...");
 
     await this.waitWithCheck(this.getGenericLocator("first"), HARD_TIMEOUT);
 
@@ -822,7 +828,7 @@ class MicrosoftBot {
   }
 
   async confirmAddressIfPrompted() {
-    console.log("[STEP 10] Checking for address confirmation prompt...");
+    await this._logStep(10, "Mengecek konfirmasi alamat...");
 
     await this.waitForSpinnerGone();
 
@@ -865,7 +871,7 @@ class MicrosoftBot {
   }
 
   async fillPassword() {
-    console.log("[STEP 11] Filling password");
+    await this._logStep(11, "Mengisi password dan konfirmasi domain...");
 
     await this.waitForSpinnerGone();
     try {
@@ -1069,7 +1075,7 @@ class MicrosoftBot {
   }
 
   async goToPaymentPage() {
-    console.log("[STEP 12] Waiting until payment page appears");
+    await this._logStep(12, "Menunggu halaman pembayaran muncul...");
 
     await this.page
       .waitForLoadState("domcontentloaded", { timeout: HARD_TIMEOUT })
@@ -1112,7 +1118,7 @@ class MicrosoftBot {
   }
 
   async fillPaymentDetails() {
-    console.log("[STEP 13] Filling VCC payment details");
+    await this._logStep(13, "Mengisi detail pembayaran VCC...");
 
     await this.waitForSpinnerGone();
 
@@ -1307,7 +1313,7 @@ class MicrosoftBot {
   }
 
   async acceptTrialAndStart() {
-    console.log("[STEP 14] Clicking Start Trial button");
+    await this._logStep(14, "Menyetujui trial dan memulai...");
 
     const maxRetries = 2;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1452,7 +1458,7 @@ class MicrosoftBot {
   }
 
   async clickGetStartedButton() {
-    console.log("[STEP 15] Clicking final Next/Get Started button");
+    await this._logStep(15, "Klik tombol Get Started terakhir...");
     await this.waitForSpinnerGone(800);
 
     await this.page.evaluate(() => {
@@ -1478,7 +1484,7 @@ class MicrosoftBot {
   }
 
   async extractFinalDomainAccount() {
-    console.log("[STEP 16] Finalizing account data...");
+    await this._logStep(16, "Finalisasi data akun...");
 
     if (this.extractedDomainEmail && this.extractedDomainPassword) {
       console.log(

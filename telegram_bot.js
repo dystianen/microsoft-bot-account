@@ -5,6 +5,11 @@ const connectDB = require("./db");
 const { SuccessAccount, VCC, UserConfig } = require("./models");
 const date = require("date-and-time");
 const adsPowerHelper = require("./adspower_helper");
+const remoteLogger = require("./remote_logger");
+
+// Global state for graceful shutdown
+let isShuttingDown = false;
+let activeAccountsCount = 0;
 
 // Wrap in an async function to allow awaiting connection
 async function startBot() {
@@ -25,6 +30,31 @@ async function startBot() {
     initializeBotHandlers(bot);
 
     console.log("Telegram Bot with MongoDB (ms365bot) started.");
+
+    // Graceful Shutdown Handler
+    const shutdown = () => {
+      if (isShuttingDown) return;
+      console.log("\n[Graceful Shutdown] Signal received. Finishing current tasks...");
+      isShuttingDown = true;
+      
+      // Stop receiving new commands from Telegram
+      bot.stopPolling();
+
+      if (activeAccountsCount === 0) {
+        console.log("[Graceful Shutdown] No active tasks. Exiting now.");
+        process.exit(0);
+      } else {
+        console.log(`[Graceful Shutdown] Waiting for ${activeAccountsCount} active accounts to finish...`);
+        // Safety timeout to prevent hanging forever
+        setTimeout(() => {
+          console.log("[Graceful Shutdown] Timeout reached. Force exiting.");
+          process.exit(1);
+        }, 290000); // 4.8 minutes (matches kill_timeout in pm2)
+      }
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (err) {
     console.error("Failed to start bot:", err.message);
     process.exit(1);
@@ -223,7 +253,10 @@ function initializeBotHandlers(bot) {
       const dateStr = item.createdAt
         ? date.format(item.createdAt, "DD MMM YYYY HH:mm", true)
         : "N/A";
-      summary += `${idx + 1}. [${dateStr}] <code>${item.domainEmail}</code> | <code>${item.domainPassword}</code>\n`;
+      summary += `${idx + 1}. ✅ <code>${dateStr}</code>\n`;
+      summary += `📧 <code>${escapeHTML(item.domainEmail)}</code>\n`;
+      summary += `🔑 <code>${escapeHTML(item.domainPassword)}</code>\n`;
+      summary += `────────────────\n`;
     });
 
     bot.sendMessage(chatId, summary, { parse_mode: "HTML" });
@@ -417,6 +450,8 @@ function initializeBotHandlers(bot) {
       `🚀 Starting batch for ${session.accounts.length} accounts using ${vccs.length} VCCs (Concurrency: ${userConf.concurrencyLimit})...`,
     );
 
+    await remoteLogger.reportSystemStatus(`(Queue Start - ${session.accounts.length} accts)`);
+
     const runQueue = async () => {
       let activeWorkers = 0;
       const maxWorkers = userConf.concurrencyLimit;
@@ -468,6 +503,7 @@ function initializeBotHandlers(bot) {
         const vccId = vcc._id;
         const vccLast4 = vcc.cardNumber.slice(-4);
 
+        activeAccountsCount++;
         const onPaymentSaved = async () => {
           console.log(
             `[onPaymentSaved] VCC ****${vccLast4} — attempting decrement...`,
@@ -528,6 +564,12 @@ function initializeBotHandlers(bot) {
           }
         } catch (err) {
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
+        } finally {
+          activeAccountsCount--;
+          if (isShuttingDown && activeAccountsCount === 0) {
+            console.log("[Graceful Shutdown] Last active task finished. Exiting process.");
+            process.exit(0);
+          }
         }
       };
 
@@ -536,7 +578,7 @@ function initializeBotHandlers(bot) {
         const pendingPromises = new Set();
 
         while (true) {
-          if (activeWorkers < maxWorkers && session.accounts.length > 0) {
+          if (activeWorkers < maxWorkers && session.accounts.length > 0 && !isShuttingDown) {
             // ── Assign VCC BEFORE spawning the worker ──────────────────────────
             const vcc = getNextVcc();
             if (!vcc) {

@@ -21,6 +21,7 @@ module.exports = {
   maxAccountsPerPayment: 3, // Maximum number of Microsoft accounts per payment method
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN,
+    logChatId: process.env.TELEGRAM_LOG_CHAT_ID, // Add this
   },
   headless: process.env.HEADLESS === "true", // Run browser in headless mode
 };

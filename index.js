@@ -1,6 +1,7 @@
 const adsPowerHelper = require("./adspower_helper");
 const MicrosoftBot = require("./microsoft_bot");
 const { SuccessAccount } = require("./models");
+const remoteLogger = require("./remote_logger");
 
 async function saveToDB(result, telegram_id) {
   if (result.status !== "SUCCESS") return;
@@ -67,6 +68,9 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
         domainPassword: accountConfig.microsoftAccount.password,
         log: "Completed successfully",
       };
+
+      const successDetails = `📧 <b>Login:</b> <code>${executionResult.domainEmail}</code>\n🔑 <b>Pass:</b> <code>${executionResult.domainPassword}</code>`;
+      await remoteLogger.logSuccess(accountConfig.microsoftAccount.email, "Berhasil membuat akun Microsoft!", successDetails);
     } else {
       console.error(
         `[Account ${index + 1}] Automation failed: ${result?.error || "Unknown error"}`,
@@ -77,6 +81,7 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
         domainPassword: "",
         log: result?.error || "Unknown automation error",
       };
+      await remoteLogger.logError(accountConfig.microsoftAccount.email, "Proses otomatisasi gagal", executionResult.log);
     }
   } catch (err) {
     console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
@@ -86,6 +91,7 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
       domainPassword: "",
       log: err.message,
     };
+    await remoteLogger.logError(accountConfig.microsoftAccount.email, "Terjadi kesalahan fatal", err.message);
   } finally {
     if (executionResult && executionResult.status !== "SUCCESS") {
       console.log(`[Account ${index + 1}] Waiting 5s before cleanup...`);
