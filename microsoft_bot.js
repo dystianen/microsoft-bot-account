@@ -453,7 +453,7 @@ class MicrosoftBot {
     const url = this.accountConfig.microsoftUrl || config.microsoftUrl;
     // Speed up initial navigation — wait for commit then poll for elements
     await this.page.goto(url, {
-      waitUntil: "domcontentloaded",
+      waitUntil: "commit",
       timeout: HARD_TIMEOUT,
     });
   }
@@ -1613,15 +1613,6 @@ class MicrosoftBot {
         "agar kami tahu Anda bukan robot",
         "error code",
         "715-123280",
-        "Kami mohon maaf",
-        "Silakan coba lagi",
-        "Terdapat masalah",
-        "We are sorry",
-        "Please try again",
-        "Contact support",
-        "Hubungi dukungan",
-        "Tidak dapat memproses",
-        "Could not process",
       ];
 
       for (const frame of this.page.frames()) {
