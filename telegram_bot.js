@@ -116,11 +116,11 @@ function initializeBotHandlers(bot) {
   const mainMenu = {
     reply_markup: {
       keyboard: [
-        [{ text: "➕ Add Account" }, { text: "💳 Add VCC" }],
-        [{ text: "⚙️ Config" }, { text: "🚀 Generate" }],
-        [{ text: "📜 History" }, { text: "🗑️ Delete History" }],
-        [{ text: "🧹 Reset Session" }, { text: "🗑️ Delete VCC" }],
-        [{ text: "📊 Check VCC" }, { text: "🛑 Stop Queue" }],
+        [{ text: "➕ Add Account" }, { text: "📊 Check VCC" }],
+        [{ text: "💳 Add VCC" }, { text: "🧹 Reset Session" }],
+        [{ text: "⚙️ Config" }, { text: "🗑️ Delete VCC" }],
+        [{ text: "🚀 Generate" }, { text: "🗑️ Delete History" }],
+        [{ text: "📜 History" }, { text: "🛑 Stop Queue" }],
       ],
       resize_keyboard: true,
     },
