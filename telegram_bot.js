@@ -117,10 +117,10 @@ function initializeBotHandlers(bot) {
     reply_markup: {
       keyboard: [
         [{ text: "➕ Add Account" }, { text: "💳 Add VCC" }],
-        [{ text: "🚀 Generate" }, { text: "🛑 Stop Queue" }],
-        [{ text: "📊 Check VCC" }, { text: "📜 History" }],
-        [{ text: "⚙️ Config" }, { text: "🧹 Reset Session" }],
-        [{ text: "🗑️ Delete VCC" }, { text: "🗑️ Delete Success" }],
+        [{ text: "⚙️ Config" }, { text: "🚀 Generate" }],
+        [{ text: "📜 History" }, { text: "🗑️ Delete History" }],
+        [{ text: "🧹 Reset Session" }, { text: "🗑️ Delete VCC" }],
+        [{ text: "📊 Check VCC" }, { text: "🛑 Stop Queue" }],
       ],
       resize_keyboard: true,
     },
@@ -216,12 +216,12 @@ function initializeBotHandlers(bot) {
     );
   });
 
-  bot.onText(/🗑️ Delete Success/, async (msg) => {
+  bot.onText(/🗑️ Delete History/, async (msg) => {
     const chatId = msg.chat.id;
     await SuccessAccount.deleteMany({ telegram_id: chatId.toString() });
     bot.sendMessage(
       chatId,
-      "All success records for your account have been deleted from DB.",
+      "All success history records for your account have been deleted from DB.",
       mainMenu,
     );
   });
