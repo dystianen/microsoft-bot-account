@@ -1359,148 +1359,82 @@ class MicrosoftBot {
   }
 
   async acceptTrialAndStart() {
-    await this._logStep(14, "Menyetujui trial dan memulai...");
+await this._logStep(14, "Menyetujui trial dan memulai...");
 
-    const maxRetries = 2;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const currentUrl = this.page.url();
-        if (
-          currentUrl.includes("setup-account") ||
-          currentUrl.includes("setupaccount") ||
-          currentUrl.includes("complete")
-        ) {
-          console.log(
-            "[INFO] Detected setup-account URL, skipping click attempt.",
-          );
-          return;
+    await this.waitForSpinnerGone(800);
+
+    // Handle checkbox
+    try {
+      const checkbox = this.page.locator('input[type="checkbox"]').first();
+      if (await checkbox.count()) {
+        const checked =
+          (await checkbox.getAttribute("aria-checked")) === "true" ||
+          (await checkbox.isChecked());
+        if (!checked) {
+          console.log("[INFO] Checking agreement checkbox...");
+          await this.randomMouseMove();
+          await checkbox.click({ force: true });
+          await this.humanDelay(700);
         }
-
-        await this.waitForSpinnerGone(1000);
-
-        // Handle checkboxes - click ALL unchecked ones to be safe
-        try {
-          const checkboxes = this.page.locator('input[type="checkbox"]');
-          const count = await checkboxes.count();
-          for (let i = 0; i < count; i++) {
-            const cb = checkboxes.nth(i);
-            const name = await cb.getAttribute("name").catch(() => "");
-            const isChecked = await cb.isChecked().catch(() => false);
-            const ariaChecked = await cb
-              .getAttribute("aria-checked")
-              .catch(() => "");
-
-            if (!isChecked && ariaChecked !== "true") {
-              console.log(`[INFO] Clicking checkbox [${name || i}]...`);
-              await cb.click({ force: true }).catch(() => {});
-              await this.humanDelay(500);
-            }
-          }
-        } catch (e) {
-          console.log("[INFO] Checkbox handling skipped:", e.message);
-        }
-
-        // Tunggu tombol enabled
-        console.log(
-          `[INFO] Waiting for Start Trial button (Attempt ${attempt})...`,
-        );
-        const keywordsForWait = [
-          "start",
-          "trial",
-          "mulai",
-          "coba",
-          "try",
-          "now",
-          "uji",
-          "selesaikan",
-          "complete",
-          "subscribe",
-          "pesanan",
-          "order",
-          "submit",
-          "bayar",
-          "pay",
-        ];
-
-        await this.runWithMonitor(
-          this.page.waitForFunction(
-            (kws) => {
-              const btn = [
-                ...document.querySelectorAll("button, [role='button'], a"),
-              ].find((b) => {
-                const text =
-                  (b.textContent || b.value || "").trim().toLowerCase() || "";
-                return (
-                  kws.some((kw) => text.includes(kw)) &&
-                  text.length > 0 &&
-                  text.length < 60
-                );
-              });
-              return (
-                btn &&
-                !btn.disabled &&
-                btn.getAttribute("aria-disabled") !== "true" &&
-                !btn.classList.contains("is-disabled")
-              );
-            },
-            keywordsForWait,
-            { timeout: attempt === 1 ? 30000 : 45000 },
-          ),
-        ).catch(() =>
-          console.log("[WARN] Button not confirmed enabled, will try anyway."),
-        );
-
-        await this.clickButtonWithPossibleNames(
-          [
-            "Start trial",
-            "Mulai uji coba",
-            "Try now",
-            "Coba sekarang",
-            "Mulai percobaan",
-            "Start free trial",
-            "Start",
-            "Mulai",
-            "Selesaikan pesanan",
-            "Complete order",
-            "Submit order",
-            "Subscribe",
-            "Get started now",
-            "Try it now",
-            "Pay now",
-            "Bayar sekarang",
-          ],
-          attempt === 1 ? 40000 : 60000,
-        );
-
-        console.log("[INFO] Start Trial clicked successfully");
-
-        await Promise.race([
-          this.page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
-          this.page
-            .waitForLoadState("networkidle", { timeout: 20000 })
-            .catch(() => {}),
-          this.page
-            .waitForURL(/setup-account|complete/i, { timeout: 20000 })
-            .catch(() => {}),
-        ]);
-
-        return; // Success
-      } catch (e) {
-        if (attempt === maxRetries) throw e;
-
-        console.warn(
-          `[WARN] Step 14 failed (attempt ${attempt}/${maxRetries}): ${e.message}`,
-        );
-
-        // If it's a timeout or other error, try reloading
-        console.log(
-          "[INFO] Reloading page to recover from potential UI hang...",
-        );
-        await this.page.reload().catch(() => {});
-        await this.waitForSpinnerGone(2000);
-        await this.humanDelay(2000);
       }
+    } catch (e) {
+      console.log("[INFO] Checkbox handling skipped:", e.message);
     }
+
+    // Tunggu tombol enabled — pakai partial keyword, bukan exact pattern
+    console.log("[INFO] Waiting for Start Trial button to be enabled...");
+    await this.page
+      .waitForFunction(
+        () => {
+          // ✅ Partial keywords — cukup ada salah satu kata ini
+          const keywords = [
+            "start",
+            "trial",
+            "mulai",
+            "coba",
+            "try",
+            "now",
+            "uji",
+          ];
+
+          const btn = [...document.querySelectorAll("button")].find((b) => {
+            const text = b.textContent?.trim().toLowerCase() || "";
+            // Minimal 1 keyword cocok, dan button tidak disabled
+            return (
+              keywords.some((kw) => text.includes(kw)) && text.length < 60 // Hindari false positive dari button dengan teks panjang
+            );
+          });
+
+          return (
+            btn &&
+            !btn.disabled &&
+            btn.getAttribute("aria-disabled") !== "true" &&
+            !btn.classList.contains("is-disabled")
+          );
+        },
+        { timeout: HARD_TIMEOUT },
+      )
+      .catch(() =>
+        console.log("[WARN] Could not confirm button enabled, proceeding..."),
+      );
+
+    await this.clickButtonWithPossibleNames([
+      "Start trial",
+      "Mulai uji coba",
+      "Try now",
+      "Coba sekarang",
+      "Mulai percobaan",
+      "Start free trial",
+      "Start",
+      "Mulai",
+    ]);
+
+    console.log("[INFO] Start Trial clicked");
+
+    await Promise.race([
+      this.page.waitForNavigation({ timeout: HARD_TIMEOUT }).catch(() => {}),
+      this.page.waitForLoadState("networkidle").catch(() => {}),
+    ]);
   }
 
   async clickGetStartedButton() {
