@@ -455,6 +455,11 @@ function initializeBotHandlers(bot) {
     const runQueue = async () => {
       let activeWorkers = 0;
       const maxWorkers = userConf.concurrencyLimit;
+      const originalTotal = session.accounts.length;
+      const queueResults = {
+        success: [],
+        failed: [],
+      };
 
       // ─── VCC round-robin state ───────────────────────────────────────────────
       // vccPool holds only ACTIVE vccs with saldo > 0.
@@ -547,6 +552,11 @@ function initializeBotHandlers(bot) {
           );
 
           if (result.status === "SUCCESS") {
+            queueResults.success.push({
+              email: accountData.email,
+              domainEmail: result.domainEmail,
+              domainPassword: result.domainPassword,
+            });
             let message = `✅ <b>Success [${currentIdx}]</b>\n`;
             message += `Time: <code>${date.format(new Date(), "DD MMM YYYY HH:mm", true)}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
@@ -554,6 +564,10 @@ function initializeBotHandlers(bot) {
             message += `Password: <code>${escapeHTML(result.domainPassword)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
+            queueResults.failed.push({
+              email: accountData.email,
+              log: result.log,
+            });
             let message = `❌ <b>Failed [${currentIdx}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Time: <code>${date.format(new Date(), "DD MMM YYYY HH:mm", true)}</code>\n`;
             if (result.log && result.log.includes("CAPTCHA_DETECTED")) {
@@ -563,6 +577,10 @@ function initializeBotHandlers(bot) {
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           }
         } catch (err) {
+          queueResults.failed.push({
+            email: accountData.email,
+            log: err.message,
+          });
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
         } finally {
           activeAccountsCount--;
@@ -626,19 +644,53 @@ function initializeBotHandlers(bot) {
         );
       } finally {
         session.running = false;
-        if (session.forceStop) {
-          session.forceStop = false;
-          bot.sendMessage(
-            chatId,
-            "🛑 Queue processing stopped successfully.",
-            mainMenu,
-          );
-        } else {
-          bot.sendMessage(
-            chatId,
-            "🏁 Finished processing session accounts.",
-            mainMenu,
-          );
+        const processedCount = queueResults.success.length + queueResults.failed.length;
+        let summaryMsg = session.forceStop
+          ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
+          : `🏁 <b>Batch Queue Finished</b>\n`;
+
+        summaryMsg += `🔢 Total Queue: <code>${originalTotal}</code>\n`;
+        summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
+        summaryMsg += `❌ Failed: <code>${queueResults.failed.length}</code>\n`;
+
+        if (processedCount < originalTotal) {
+          summaryMsg += `🛑 Stopped: <code>${originalTotal - processedCount}</code> accounts skipped\n`;
+        }
+        summaryMsg += `\n`;
+
+        if (queueResults.success.length > 0) {
+          summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
+          queueResults.success.forEach((r, i) => {
+            summaryMsg += `${i + 1}. 📧 <code>${escapeHTML(r.domainEmail)}</code>\n`;
+            summaryMsg += `   🔑 <code>${escapeHTML(r.domainPassword)}</code>\n`;
+          });
+          summaryMsg += `\n`;
+        }
+
+        if (queueResults.failed.length > 0) {
+          summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
+          queueResults.failed.forEach((r, i) => {
+            summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+            summaryMsg += `   ⚠️ Log: <i>${escapeHTML(r.log || "No log")}</i>\n`;
+            summaryMsg += `────────────────\n`;
+          });
+        }
+
+        const isManual = session.forceStop;
+        if (isManual) session.forceStop = false;
+
+        // Send summary to remoteLogger
+        await remoteLogger.send(summaryMsg);
+        await remoteLogger.reportSystemStatus(isManual ? "(Queue Stopped)" : "(Queue Finished)");
+
+        // Send detailed report to user DM directly (chunked)
+        const CHUNK_SIZE = 4000;
+        for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
+          const chunk = summaryMsg.substring(i, i + CHUNK_SIZE);
+          await safeSendMessage(chatId, chunk, {
+            parse_mode: "HTML",
+            reply_markup: mainMenu,
+          });
         }
       }
     };
