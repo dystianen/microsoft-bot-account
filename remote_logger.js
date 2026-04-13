@@ -30,7 +30,7 @@ class RemoteLogger {
         const res = await axios.post(
           `https://api.telegram.org/bot${this.token}/${endpoint}`,
           payload,
-          { timeout: 15000 } // Tambahkan timeout agar tidak hang selamanya
+          { timeout: 15000 }, // Tambahkan timeout agar tidak hang selamanya
         );
         return res;
       } catch (err) {
@@ -39,8 +39,11 @@ class RemoteLogger {
 
         // Rate limited — beri info di console agar user tahu bot tidak mati
         if (status === 429) {
-          const retryAfter = (err.response?.data?.parameters?.retry_after || 5) * 1000;
-          console.warn(`[RemoteLogger] Rate limited, waiting ${retryAfter}ms (Attempt ${attempt})`);
+          const retryAfter =
+            (err.response?.data?.parameters?.retry_after || 5) * 1000;
+          console.warn(
+            `[RemoteLogger] Rate limited, waiting ${retryAfter}ms (Attempt ${attempt})`,
+          );
           await new Promise((r) => setTimeout(r, retryAfter));
           continue;
         }
@@ -203,7 +206,6 @@ class RemoteLogger {
     if (details) {
       text += `\n${details}\n`;
     }
-    text += `${this.getProgressBar(16, 16)}`;
 
     await this._sendOrEdit(email, text, true);
   }
