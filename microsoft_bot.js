@@ -4,7 +4,7 @@ const config = require("./config");
 const remoteLogger = require("./remote_logger");
 
 const SPINNER_SELECTOR =
-  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], .css-100, .loader, [role="progressbar"]';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
 const HARD_TIMEOUT = 1.5 * 60 * 1000; // 1 menit 30 detik
@@ -181,6 +181,9 @@ class MicrosoftBot {
   }
 
   async waitForSpinnerGone(extraDelay = 0) {
+    // 1. Tunggu sebentar karena spinner sering kali baru muncul beberapa saat setelah aksi klik
+    await this.page.waitForTimeout(500).catch(() => {});
+
     const spinner = this.page.locator(SPINNER_SELECTOR).first();
     const spinnerVisible = await spinner.isVisible().catch(() => false);
 
@@ -197,8 +200,11 @@ class MicrosoftBot {
         );
       }
       console.log("[WAIT] Spinner gone.");
+      // Grace period agar DOM stabil setelah spinner hilang
+      await this.page.waitForTimeout(800).catch(() => {});
     }
 
+    // 2. Selesai spinner baru cek deteksi error (seperti instruksi USER)
     const postSpinnerError = await this.checkForError();
     if (postSpinnerError) {
       throw new Error(`MICROSOFT_ERROR: ${postSpinnerError}`);
@@ -530,7 +536,7 @@ class MicrosoftBot {
     // Poll fast for cards without waiting for domcontentloaded
     const cardsVisible = await cards
       .first()
-      .waitFor({ state: "visible", timeout: 30000 })
+      .waitFor({ state: "visible", timeout: 90000 })
       .then(() => true)
       .catch(() => false);
 
@@ -1483,24 +1489,34 @@ class MicrosoftBot {
     await this._logStep(14, "Menyetujui trial dan memulai...");
 
     // ✅ Tunggu halaman transisi dan spinner benar-benar hilang
-    await this.page.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+    await this.page
+      .waitForLoadState("domcontentloaded", { timeout: 30000 })
+      .catch(() => {});
     await this.waitForSpinnerGone(1500);
-    await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    await this.page
+      .waitForLoadState("networkidle", { timeout: 10000 })
+      .catch(() => {});
 
     // Handle checkbox (Agreement)
     try {
       const checkboxSelectors = [
         'input[type="checkbox"]',
         '[role="checkbox"]',
-        '.ms-Checkbox-input',
-        '#agreement-checkbox',
+        ".ms-Checkbox-input",
+        "#agreement-checkbox",
       ];
-      
+
       const checkbox = this.page.locator(checkboxSelectors.join(", ")).first();
       if (await checkbox.count()) {
-        const isChecked = await checkbox.evaluate(el => {
-          return el.checked || el.getAttribute("aria-checked") === "true" || el.classList.contains("is-checked");
-        }).catch(() => false);
+        const isChecked = await checkbox
+          .evaluate((el) => {
+            return (
+              el.checked ||
+              el.getAttribute("aria-checked") === "true" ||
+              el.classList.contains("is-checked")
+            );
+          })
+          .catch(() => false);
 
         if (!isChecked) {
           console.log("[INFO] Checking agreement checkbox...");
@@ -1515,41 +1531,76 @@ class MicrosoftBot {
 
     // Tunggu tombol enabled — pakai partial keyword yang lebih luas
     console.log("[INFO] Waiting for Start Trial/Order button to be enabled...");
-    await this.page
-      .waitForFunction(
+    await this.runWithMonitor(
+      this.page.waitForFunction(
         () => {
           const keywords = [
-            "start", "trial", "mulai", "coba", "try", "now", "uji", 
-            "order", "pesan", "checkout", "buy", "beli", "place", "setup",
-            "subscribe", "langganan", "confirm", "konfirmasi"
+            "start",
+            "trial",
+            "mulai",
+            "coba",
+            "try",
+            "now",
+            "uji",
+            "order",
+            "pesan",
+            "checkout",
+            "buy",
+            "beli",
+            "place",
+            "setup",
+            "subscribe",
+            "langganan",
+            "confirm",
+            "konfirmasi",
           ];
 
-          const candidates = [...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="submit"]')];
+          const candidates = [
+            ...document.querySelectorAll(
+              'button, [role="button"], a[role="button"], input[type="submit"]',
+            ),
+          ];
           const btn = candidates.find((b) => {
-            const text = (b.textContent || b.value || b.getAttribute("aria-label") || "").trim().toLowerCase();
+            const text = (
+              b.textContent ||
+              b.value ||
+              b.getAttribute("aria-label") ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
             return (
-              keywords.some((kw) => text.includes(kw)) && text.length > 0 && text.length < 60
+              keywords.some((kw) => text.includes(kw)) &&
+              text.length > 0 &&
+              text.length < 60
             );
           });
 
           if (!btn) return false;
 
-          const isEnabled = !btn.disabled && 
-                            btn.getAttribute("aria-disabled") !== "true" && 
-                            !btn.classList.contains("is-disabled") &&
-                            !btn.classList.contains("ms-Button--disabled");
-          
+          const isEnabled =
+            !btn.disabled &&
+            btn.getAttribute("aria-disabled") !== "true" &&
+            !btn.classList.contains("is-disabled") &&
+            !btn.classList.contains("ms-Button--disabled");
+
           // Pastikan juga terlihat (tidak hidden)
           const style = window.getComputedStyle(btn);
-          const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+          const isVisible =
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            style.opacity !== "0";
 
           return isEnabled && isVisible;
         },
         { timeout: 45000 }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
-      )
-      .catch(() =>
-        console.log("[WARN] Could not confirm button enabled, proceeding anyway..."),
-      );
+      ),
+      45000,
+    ).catch(() =>
+      console.log(
+        "[WARN] Could not confirm button enabled, proceeding anyway...",
+      ),
+    );
 
     await this.clickButtonWithPossibleNames([
       "Start trial",
@@ -1566,15 +1617,17 @@ class MicrosoftBot {
       "Checkout",
       "Selesaikan pesanan",
       "Confirm",
-      "Konfirmasi"
+      "Konfirmasi",
     ]);
 
     console.log("[INFO] Start Trial clicked");
 
-    await Promise.race([
-      this.page.waitForNavigation({ timeout: HARD_TIMEOUT }).catch(() => {}),
-      this.page.waitForLoadState("networkidle").catch(() => {}),
-    ]);
+    await this.runWithMonitor(
+      Promise.race([
+        this.page.waitForNavigation({ timeout: HARD_TIMEOUT }).catch(() => {}),
+        this.page.waitForLoadState("networkidle").catch(() => {}),
+      ]),
+    );
   }
 
   async clickGetStartedButton() {
@@ -1645,10 +1698,31 @@ class MicrosoftBot {
 
   async checkForError() {
     try {
-      // 1. Cek keberadaan iframe Arkose/Captcha secara eksplisit
+      // 1. Check title & URL for obvious error states
+      const title = await this.page.title().catch(() => "");
+      const url = this.page.url().toLowerCase();
+
+      if (
+        /error|sorry|happened|wrong|failed|terjadi kesalahan/i.test(title) ||
+        url.includes("error")
+      ) {
+        // Double check text content to avoid false positives from "error reporting" pages etc.
+        const bodyText = await this.page.textContent("body").catch(() => "");
+        if (
+          /something went wrong|something happened|terjadi kesalahan|terjadi sesuatu/i.test(
+            bodyText,
+          )
+        ) {
+          return `Error Page Detected: ${title || url}`;
+        }
+      }
+
+      // 2. Cek keberadaan iframe Arkose/Captcha secara eksplisit
       const captchaIndicators = [
         'button:has-text("solve the puzzle")',
         'h2:has-text("Protecting your account")',
+        'iframe[title*="Arkose" i]',
+        'iframe[src*="arkose" i]',
       ];
 
       for (const selector of captchaIndicators) {
@@ -1663,21 +1737,34 @@ class MicrosoftBot {
         }
       }
 
-      // 2. Cek pesan error validasi di field
+      // 3. Cek pesan error validasi di field (data-automation-id common in Fluent UI)
       const fieldError = this.page
-        .locator('[data-automation-id="error-message"]')
+        .locator(
+          '[data-automation-id="error-message"], [role="alert"].error, .ms-MessageBar--error',
+        )
         .first();
       if (await fieldError.isVisible().catch(() => false)) {
         const msg = (await fieldError.textContent().catch(() => "")).trim();
-        return `Field Validation Error: ${msg}`;
+        if (msg) return `Validation/UI Error: ${msg}`;
       }
 
-      // 3. Cek teks di SEMUA frame (termasuk iframe tersembunyi)
+      // 4. Cek teks di SEMUA frame (termasuk iframe tersembunyi)
       const markers = [
         "something went wrong",
         "something happened",
+        "there's a problem",
+        "there was a problem",
+        "we're sorry",
+        "we are sorry",
+        "try again later",
+        "try again shortly",
+        "request can't be completed",
+        "request cannot be completed",
         "terjadi sesuatu",
         "Terjadi kesalahan",
+        "Sesuatu telah terjadi",
+        "maaf, ada masalah",
+        "Mohon maaf",
         "Melindungi akun Anda",
         "try a different way",
         "Protecting your account",
@@ -1686,12 +1773,18 @@ class MicrosoftBot {
         "Selesaikan teka-teki",
         "agar kami tahu Anda bukan robot",
         "error code",
+        "correlation id",
         "715-123280",
       ];
 
       for (const frame of this.page.frames()) {
         try {
-          const frameText = await frame.innerText("body").catch(() => "");
+          // evaluate textContent catches things innerText might miss (hidden/shadow)
+          const frameText = await frame
+            .evaluate(() => document.body?.textContent || "")
+            .catch(() => "");
+          if (!frameText) continue;
+
           const lowerFrameText = frameText.toLowerCase();
           const found = markers.find((m) =>
             lowerFrameText.includes(m.toLowerCase()),
