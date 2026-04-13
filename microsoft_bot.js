@@ -882,11 +882,12 @@ class MicrosoftBot {
     await this.humanDelay(400);
 
     // Company size
+    await this.humanScroll();
     await this.selectDropdownByText(
       'div[role="combobox"][id*="size" i], div[role="combobox"][data-testid*="size" i], select[id*="size" i]',
       this.accountConfig.microsoftAccount.companySize,
     );
-    await this.humanDelay(650);
+    await this.humanDelay(1200, 2000);
 
     // Phone — pakai paste
     const phoneLocator = this.getGenericLocator("phone");
@@ -983,11 +984,12 @@ class MicrosoftBot {
 
     // Website (jangan pakai "Select one")
     await this.humanDelay(714);
+    await this.humanScroll();
     await this.selectDropdownByText(
       'div[role="combobox"][id*="website" i], div[role="combobox"][data-testid*="website" i], select[id*="website" i]',
       ["No", "Tidak"],
     );
-    await this.humanDelay(1500);
+    await this.humanDelay(2000, 3000);
 
     // Checkbox
     try {
@@ -1836,10 +1838,17 @@ class MicrosoftBot {
             lowerFrameText.includes(m.toLowerCase()),
           );
           if (found) {
+            // Ambil snippet text di sekitar marker (max 150 karakter)
+            const index = lowerFrameText.indexOf(found.toLowerCase());
+            const snippet = frameText
+              .substring(index, index + 150)
+              .replace(/\s+/g, " ")
+              .trim();
+
             console.log(
-              `[ERROR] Marker "${found}" detected in frame: ${frame.url()}`,
+              `[ERROR] Marker "${found}" detected in frame: ${frame.url()}. Context: ${snippet}`,
             );
-            return found;
+            return snippet || found;
           }
         } catch (e) {
           /* skip inaccessible frames */
