@@ -575,14 +575,19 @@ class MicrosoftBot {
 
       if ((await tryFreeBtn.count()) > 0) {
         console.log(
-          `[INFO] Clicking "Try for free" (Target: ${targetPlan})...`,
+          `[INFO] Clicking "Try for free" (Target: ${targetPlan}) via JS click...`,
         );
+        
         const [popup] = await Promise.all([
           this.page
             .context()
             .waitForEvent("page", { timeout: HARD_TIMEOUT })
             .catch(() => null),
-          this.humanClick(tryFreeBtn),
+          // Gunakan JS Click untuk menghindari timeout pada Playwright Click
+          tryFreeBtn.evaluate((el) => el.click()).catch(async () => {
+             console.log("[INFO] JS click failed, attempting native humanClick...");
+             await this.humanClick(tryFreeBtn).catch(e => console.error("[ERROR] Native click also failed:", e.message));
+          }),
         ]);
 
         if (popup) {
@@ -742,6 +747,11 @@ class MicrosoftBot {
       "Berikutnya",
     ]);
 
+    // ✅ Tunggu spinner selesai dulu sebelum mendeteksi elemen berikutnya.
+    // Tanpa ini, bot bisa salah mendeteksi elemen saat halaman masih loading.
+    console.log("[INFO] Waiting for page to settle after email submit...");
+    await this.waitForSpinnerGone(500);
+
     console.log("[INFO] Waiting for Setup button OR basic info form...");
 
     const setupBtn = this.getGenericButton([
@@ -767,7 +777,7 @@ class MicrosoftBot {
       "Mulai",
     ]);
 
-    // Deteksi form biodata (berarti halaman Skip setup button)
+    // Deteksi form biodata (berarti halaman langsung tampilkan form, skip setup button)
     const basicInfoForm = this.page
       .locator(
         'input[id*="first" i], input[id*="fname" i], input[id*="firstName" i]',
