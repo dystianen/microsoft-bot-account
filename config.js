@@ -24,4 +24,6 @@ module.exports = {
     logChatId: process.env.TELEGRAM_LOG_CHAT_ID, // Add this
   },
   headless: process.env.HEADLESS === "true", // Run browser in headless mode
+  hardTimeout: 1.5 * 60 * 1000, // 90 seconds
+  paymentTimeout: 5 * 60 * 1000, // 300 seconds
 };

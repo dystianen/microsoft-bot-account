@@ -13,7 +13,7 @@ class AdsPowerHelper {
   async checkConnection() {
     try {
       await axios.get(`${this.baseUrl}/api/v1/status`, {
-        timeout: 3000,
+        timeout: config.hardTimeout,
         headers: {
           Authorization: `Bearer ${config.adsPower.apiKey}`,
           "api-key": config.adsPower.apiKey,

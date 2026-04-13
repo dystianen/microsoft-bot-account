@@ -7,7 +7,8 @@ const SPINNER_SELECTOR =
   '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
-const HARD_TIMEOUT = 1.5 * 60 * 1000; // 1 menit 30 detik
+const HARD_TIMEOUT = config.hardTimeout;
+const PAYMENT_TIMEOUT = config.paymentTimeout || 5 * 60 * 1000;
 
 class MicrosoftBot {
   constructor(wsUrl, accountConfig, onPaymentSaved) {
@@ -90,15 +91,6 @@ class MicrosoftBot {
       // Fallback ke fill biasa jika paste gagal
       await locator.fill(text);
     }
-  }
-
-  async humanType(locator, text) {
-    if (!text) return;
-    await locator.click({ force: true }).catch(() => {});
-    await this.humanDelay(300);
-    await locator.pressSequentially(text, {
-      delay: Math.floor(Math.random() * 50) + 40,
-    });
   }
 
   async humanClick(locator, options = {}) {
@@ -274,8 +266,10 @@ class MicrosoftBot {
     const button = this.page.getByRole("button", { name: pattern }).first();
 
     try {
-      await this.runWithMonitor(button.waitFor({ state: "visible", timeout }));
-      await this.humanClick(button, { timeout: 8000 });
+      await this.runWithMonitor(
+        button.waitFor({ state: "visible", timeout: HARD_TIMEOUT }),
+      );
+      await this.humanClick(button, { timeout: HARD_TIMEOUT });
       const clickedText = await button.textContent().catch(() => "unknown");
       console.log(`[INFO] Clicked: "${clickedText?.trim()}"`);
       return true;
@@ -320,12 +314,23 @@ class MicrosoftBot {
       .first();
   }
 
-  getGenericButton(keyword) {
-    return this.page
-      .locator(
-        `button[id*="${keyword}" i], button[data-testid*="${keyword}" i], button[data-bi-id*="${keyword}" i], a[data-bi-id*="${keyword}" i], button:has-text("${keyword}"), a:has-text("${keyword}")`,
+  getGenericButton(keywords) {
+    const textSelectors = keywords
+      .map((k) => `button:has-text("${k}"), a:has-text("${k}")`)
+      .join(", ");
+
+    const attrSelectors = keywords
+      .map(
+        (k) => `
+      button[id*="${k}" i],
+      button[data-testid*="${k}" i],
+      button[data-bi-id*="${k}" i],
+      a[data-bi-id*="${k}" i]
+    `,
       )
-      .first();
+      .join(", ");
+
+    return this.page.locator(`${textSelectors}, ${attrSelectors}`).first();
   }
 
   async selectDropdownByText(selector, text) {
@@ -392,7 +397,7 @@ class MicrosoftBot {
           .locator(".ms-Dropdown-item", optionSelector)
           .first();
 
-        await freshOption.waitFor({ state: "attached", timeout: 2000 });
+        await freshOption.waitFor({ state: "attached", timeout: HARD_TIMEOUT });
         await freshOption.scrollIntoViewIfNeeded();
 
         const displayText = await freshOption.textContent().catch(() => text);
@@ -401,7 +406,7 @@ class MicrosoftBot {
         );
 
         try {
-          await this.humanClick(freshOption, { timeout: 3000 });
+          await this.humanClick(freshOption, { timeout: HARD_TIMEOUT });
         } catch {
           console.log("[DROPDOWN] Normal click blocked, using JS click...");
           await freshOption.evaluate((el) => el.click());
@@ -410,7 +415,7 @@ class MicrosoftBot {
         await this.page
           .waitForSelector(".ms-Dropdown-items", {
             state: "detached",
-            timeout: 5000,
+            timeout: HARD_TIMEOUT,
           })
           .catch(() => {});
 
@@ -456,8 +461,13 @@ class MicrosoftBot {
       chromium.connectOverCDP(this.wsUrl),
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("CDP connection timeout after 30s")),
-          30000,
+          () =>
+            reject(
+              new Error(
+                `CDP connection timeout after ${config.hardTimeout / 1000}s`,
+              ),
+            ),
+          HARD_TIMEOUT,
         ),
       ),
     ]);
@@ -530,7 +540,7 @@ class MicrosoftBot {
     // Poll fast for cards without waiting for domcontentloaded
     const cardsVisible = await cards
       .first()
-      .waitFor({ state: "visible", timeout: 90000 })
+      .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
       .then(() => true)
       .catch(() => false);
 
@@ -569,7 +579,7 @@ class MicrosoftBot {
         const [popup] = await Promise.all([
           this.page
             .context()
-            .waitForEvent("page", { timeout: 30000 })
+            .waitForEvent("page", { timeout: HARD_TIMEOUT })
             .catch(() => null),
           this.humanClick(tryFreeBtn),
         ]);
@@ -581,7 +591,7 @@ class MicrosoftBot {
           );
           // Wait for full load and a bit extra for hydration
           await this.page
-            .waitForLoadState("load", { timeout: 30000 })
+            .waitForLoadState("load", { timeout: HARD_TIMEOUT })
             .catch(() => {});
           await this.waitForSpinnerGone();
 
@@ -589,7 +599,7 @@ class MicrosoftBot {
           await this.page
             .locator('button, [role="button"], a.btn')
             .first()
-            .waitFor({ state: "visible", timeout: 15000 })
+            .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
             .catch(() => {});
           await this.humanDelay(1500); // Small grace period for event listeners to attach
           return;
@@ -607,7 +617,7 @@ class MicrosoftBot {
     const [popupGlobal] = await Promise.all([
       this.page
         .context()
-        .waitForEvent("page", { timeout: 30000 })
+        .waitForEvent("page", { timeout: HARD_TIMEOUT })
         .catch(() => null),
       this.humanClick(globalBtn).catch(() => {}),
     ]);
@@ -618,13 +628,13 @@ class MicrosoftBot {
         "[INFO] Switched to new tab (global click). Waiting for content settle...",
       );
       await this.page
-        .waitForLoadState("load", { timeout: 30000 })
+        .waitForLoadState("load", { timeout: HARD_TIMEOUT })
         .catch(() => {});
       await this.waitForSpinnerGone();
       await this.page
         .locator('button, [role="button"], a.btn')
         .first()
-        .waitFor({ state: "visible", timeout: 15000 })
+        .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
         .catch(() => {});
       await this.humanDelay(1500);
     }
@@ -657,7 +667,7 @@ class MicrosoftBot {
       const oneMonthOption = this.page.locator(oneMonthSelectors).first();
 
       const isVisible = await oneMonthOption
-        .isVisible({ timeout: 8000 })
+        .isVisible({ timeout: HARD_TIMEOUT })
         .catch(() => false);
       if (isVisible) {
         console.log(
@@ -691,7 +701,7 @@ class MicrosoftBot {
     await this.waitForVisible(emailInput);
     await this.randomMouseMove();
     await emailInput.click();
-    await this.humanType(emailInput, email);
+    await this.humanPaste(emailInput, email);
 
     // Verifikasi isi field sudah benar — guard untuk koneksi proxy lambat
     // jika belum lengkap, pakai insertText (seperti copas)
@@ -706,17 +716,17 @@ class MicrosoftBot {
       console.warn(
         `[STEP 5] Email mismatch (attempt ${attempt}/${MAX_RETRIES}): expected "${email}", got "${currentValue}". Retrying with insertText...`,
       );
-      await this.humanType(emailInput, "");
+      await this.humanPaste(emailInput, "");
       await this.humanDelay(400);
       await emailInput.focus();
-      await this.humanType(emailInput, email);
+      await this.humanPaste(emailInput, email);
     }
 
     await this.humanDelay(1500);
   }
 
   async submitEmailAndWaitForSetup() {
-    await this._logStep(6, "Submit email & menunggu tombol Setup...");
+    console.log("[STEP 6] Submitting email and waiting for Setup button");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -753,15 +763,7 @@ class MicrosoftBot {
 
       "Mulai",
     ];
-
-    const setupBtnSelector = [
-      'button[id*="Setup" i], button[data-testid*="Setup" i], button[data-bi-id*="Setup" i]',
-      'a[data-bi-id*="Setup" i]',
-      ...setupKeywords.map((kw) => `button:has-text("${kw}")`),
-      ...setupKeywords.map((kw) => `a:has-text("${kw}")`),
-    ].join(", ");
-
-    const setupBtn = this.page.locator(setupBtnSelector).first();
+    const setupBtn = this.getGenericButton(setupKeywords);
 
     const start = Date.now();
     const interval = setInterval(() => {
@@ -771,31 +773,7 @@ class MicrosoftBot {
     }, 15000);
 
     try {
-      // ✅ Retry loop: cek apakah halaman berpindah ke step lain (skip Setup)
-      const deadline = Date.now() + HARD_TIMEOUT;
-      let found = false;
-      while (Date.now() < deadline && !found) {
-        found = await setupBtn.isVisible({ timeout: 5000 }).catch(() => false);
-        if (!found) {
-          // Cek apakah sudah langsung masuk ke form basic info (Setup skipped)
-          const basicInfoVisible = await this.page
-            .locator('input[id*="first" i], input[id*="firstName" i]')
-            .first()
-            .isVisible({ timeout: 2000 })
-            .catch(() => false);
-          if (basicInfoVisible) {
-            console.log(
-              "[INFO] Basic info form detected, Setup step skipped by Microsoft.",
-            );
-            this._setupBtnReady = false;
-            return;
-          }
-          const err = await this.checkForError();
-          if (err) throw new Error(`MICROSOFT_ERROR: ${err}`);
-          await this.humanDelay(2000);
-        }
-      }
-      if (!found) throw new Error("Timeout waiting for Setup button");
+      await this.waitWithCheck(setupBtn, HARD_TIMEOUT);
       this._setupBtnReady = true;
     } finally {
       clearInterval(interval);
@@ -923,7 +901,7 @@ class MicrosoftBot {
       .first();
 
     const regionIsInput = await regionInput
-      .waitFor({ state: "visible", timeout: 5000 })
+      .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
       .then(() => true)
       .catch(() => false);
 
@@ -995,7 +973,10 @@ class MicrosoftBot {
       }
 
       if ((await partnerCheckbox.count()) > 0) {
-        await partnerCheckbox.waitFor({ state: "visible", timeout: 10000 });
+        await partnerCheckbox.waitFor({
+          state: "visible",
+          timeout: HARD_TIMEOUT,
+        });
 
         if (!(await partnerCheckbox.isChecked())) {
           await this.randomMouseMove();
@@ -1129,7 +1110,7 @@ class MicrosoftBot {
       .nth(1);
 
     const confirmVisible = await confirmPasswordLocator
-      .isVisible({ timeout: 5000 })
+      .isVisible({ timeout: HARD_TIMEOUT })
       .catch(() => false);
     if (confirmVisible) {
       await confirmPasswordLocator.click({ force: true }).catch(() => {});
@@ -1187,17 +1168,17 @@ class MicrosoftBot {
       // Race: Sign In button vs Payment page — prioritaskan deteksi elemen fisik daripada URL
       const winner = await Promise.race([
         signInBtn
-          .waitFor({ state: "visible", timeout: 12000 })
+          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
           .then(() => "signin")
           .catch(() => null),
 
         paymentPageLocator
-          .waitFor({ state: "visible", timeout: 12000 })
+          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
           .then(() => "payment")
           .catch(() => null),
 
         this.page
-          .waitForURL(/payment|billing|checkout/i, { timeout: 12000 })
+          .waitForURL(/payment|billing|checkout/i, { timeout: HARD_TIMEOUT })
           .then(() => "payment_url")
           .catch(() => null),
       ]);
@@ -1254,7 +1235,7 @@ class MicrosoftBot {
         'button:has-text("Yes"), input[value="Yes"], #idSIButton9',
       );
       const yesVisible = await yesBtn
-        .waitFor({ state: "visible", timeout: 15000 })
+        .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
         .then(() => true)
         .catch(() => false);
 
@@ -1285,13 +1266,15 @@ class MicrosoftBot {
 
       // Deteksi via URL atau elemen form kartu — lebih reliable dari teks
       const found = await Promise.any([
-        this.page.waitForURL(/payment|billing|checkout/i, { timeout: 3000 }),
+        this.page.waitForURL(/payment|billing|checkout/i, {
+          timeout: HARD_TIMEOUT,
+        }),
         this.page
           .locator(
             'input[id*="card" i], input[id*="accounttoken" i], input[aria-label*="Nomor kartu" i], input[aria-label*="card number" i]',
           )
           .first()
-          .waitFor({ state: "visible", timeout: 3000 }),
+          .waitFor({ state: "visible", timeout: HARD_TIMEOUT }),
       ])
         .then(() => true)
         .catch(() => false);
@@ -1328,7 +1311,7 @@ class MicrosoftBot {
 
     console.log("Typing card number...");
     await cardLocator.click();
-    await this.humanType(cardLocator, this.accountConfig.payment.cardNumber);
+    await this.humanPaste(cardLocator, this.accountConfig.payment.cardNumber);
     await this.humanDelay(1500);
 
     console.log("Typing CVV...");
@@ -1338,7 +1321,7 @@ class MicrosoftBot {
       )
       .first();
     await cvvLocator.click();
-    await this.humanType(cvvLocator, this.accountConfig.payment.cvv);
+    await this.humanPaste(cvvLocator, this.accountConfig.payment.cvv);
     await this.humanDelay(1000);
 
     let expMonth = this.accountConfig.payment.expMonth.toString();
@@ -1460,7 +1443,7 @@ class MicrosoftBot {
       return result;
     };
 
-    let result = await waitForPaymentOutcome(60000);
+    let result = await waitForPaymentOutcome(PAYMENT_TIMEOUT);
     console.log(`[DEBUG] Payment result: ${result}`);
 
     // Kalau ada address confirmation — klik, lalu tunggu outcome sebenarnya
@@ -1487,7 +1470,7 @@ class MicrosoftBot {
       await this.humanDelay(1000);
 
       // Tunggu lagi setelah klik address — cek apakah success atau card error
-      result = await waitForPaymentOutcome(30000);
+      result = await waitForPaymentOutcome(PAYMENT_TIMEOUT);
       console.log(`[DEBUG] Payment result (post-address): ${result}`);
     }
 
@@ -1527,16 +1510,9 @@ class MicrosoftBot {
   }
 
   async acceptTrialAndStart() {
-    await this._logStep(14, "Menyetujui trial dan memulai...");
+    console.log("[STEP 14] Clicking Start Trial button");
 
-    // ✅ Tunggu halaman transisi dan spinner benar-benar hilang
-    await this.page
-      .waitForLoadState("domcontentloaded", { timeout: 30000 })
-      .catch(() => {});
     await this.waitForSpinnerGone(1500);
-    await this.page
-      .waitForLoadState("networkidle", { timeout: 10000 })
-      .catch(() => {});
 
     // Handle checkbox (Agreement)
     try {
@@ -1548,7 +1524,15 @@ class MicrosoftBot {
       ];
 
       const checkbox = this.page.locator(checkboxSelectors.join(", ")).first();
-      if (await checkbox.count()) {
+
+      // ✅ Tunggu checkbox muncul (karena adanya delay konfirmasi bank)
+      console.log("[INFO] Waiting for agreement checkbox to appear...");
+      const exists = await checkbox
+        .waitFor({ state: "attached", timeout: PAYMENT_TIMEOUT })
+        .then(() => true)
+        .catch(() => false);
+
+      if (exists) {
         const isChecked = await checkbox
           .evaluate((el) => {
             return (
@@ -1575,6 +1559,7 @@ class MicrosoftBot {
     await this.runWithMonitor(
       this.page.waitForFunction(
         () => {
+          // ✅ Partial keywords — cukup ada salah satu kata ini
           const keywords = [
             "start",
             "trial",
@@ -1634,9 +1619,9 @@ class MicrosoftBot {
 
           return isEnabled && isVisible;
         },
-        { timeout: 45000 }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
+        { timeout: HARD_TIMEOUT }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
       ),
-      45000,
+      HARD_TIMEOUT,
     ).catch(() =>
       console.log(
         "[WARN] Could not confirm button enabled, proceeding anyway...",
@@ -1673,7 +1658,9 @@ class MicrosoftBot {
 
   async clickGetStartedButton() {
     await this._logStep(15, "Klik tombol Get Started terakhir...");
-    await this.waitForSpinnerGone(800);
+
+    // Kadang loading setelah accept trial sangat lama
+    await this.waitForSpinnerGone(2000);
 
     await this.page.evaluate(() => {
       document
@@ -1793,8 +1780,6 @@ class MicrosoftBot {
         "something happened",
         "there's a problem",
         "there was a problem",
-        "we're sorry",
-        "we are sorry",
         "try again later",
         "try again shortly",
         "request can't be completed",
@@ -1802,8 +1787,6 @@ class MicrosoftBot {
         "terjadi sesuatu",
         "Terjadi kesalahan",
         "Sesuatu telah terjadi",
-        "maaf, ada masalah",
-        "Mohon maaf",
         "Melindungi akun Anda",
         "try a different way",
         "Protecting your account",
