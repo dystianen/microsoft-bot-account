@@ -1443,7 +1443,9 @@ class MicrosoftBot {
                 window.location.href.includes("setup-account") ||
                 window.location.href.includes("review") ||
                 // ✅ Tambahan: Deteksi checkbox kesepakatan sebagai sinyal keberhasilan
-                document.querySelector('input[type="checkbox"], [role="checkbox"], .ms-Checkbox-input') !== null ||
+                document.querySelector(
+                  'input[type="checkbox"], [role="checkbox"], .ms-Checkbox-input',
+                ) !== null ||
                 text.includes("agreement") ||
                 text.includes("persetujuan") ||
                 text.includes("syarat dan ketentuan") ||
@@ -1542,15 +1544,7 @@ class MicrosoftBot {
       ];
 
       const checkbox = this.page.locator(checkboxSelectors.join(", ")).first();
-
-      // ✅ Tunggu checkbox muncul (karena adanya delay konfirmasi bank)
-      console.log("[INFO] Waiting for agreement checkbox to appear...");
-      const exists = await checkbox
-        .waitFor({ state: "attached", timeout: PAYMENT_TIMEOUT })
-        .then(() => true)
-        .catch(() => false);
-
-      if (exists) {
+      if (await checkbox.count()) {
         const isChecked = await checkbox
           .evaluate((el) => {
             return (
@@ -1577,7 +1571,6 @@ class MicrosoftBot {
     await this.runWithMonitor(
       this.page.waitForFunction(
         () => {
-          // ✅ Partial keywords — cukup ada salah satu kata ini
           const keywords = [
             "start",
             "trial",
@@ -1637,9 +1630,9 @@ class MicrosoftBot {
 
           return isEnabled && isVisible;
         },
-        { timeout: HARD_TIMEOUT }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
+        { timeout: 45000 }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
       ),
-      HARD_TIMEOUT,
+      45000,
     ).catch(() =>
       console.log(
         "[WARN] Could not confirm button enabled, proceeding anyway...",
