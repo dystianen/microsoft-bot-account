@@ -166,7 +166,7 @@ class MicrosoftBot {
     return result;
   }
 
-  async waitForSpinnerGone(extraDelay = 0) {
+  async waitForSpinnerGone(extraDelay = 0, spinnerTimeout = HARD_TIMEOUT) {
     // 1. Tunggu sebentar karena spinner sering kali baru muncul beberapa saat setelah aksi klik
     await this.page.waitForTimeout(500).catch(() => {});
 
@@ -177,7 +177,8 @@ class MicrosoftBot {
       console.log("[WAIT] Spinner detected, waiting until hidden...");
       try {
         await this.runWithMonitor(
-          spinner.waitFor({ state: "hidden", timeout: HARD_TIMEOUT }),
+          spinner.waitFor({ state: "hidden", timeout: spinnerTimeout }),
+          spinnerTimeout,
         );
       } catch (e) {
         if (e.message.includes("MICROSOFT_ERROR")) throw e;
@@ -741,10 +742,9 @@ class MicrosoftBot {
       "Berikutnya",
     ]);
 
-    console.log("[INFO] Waiting for Setup button...");
+    console.log("[INFO] Waiting for Setup button OR basic info form...");
 
-    const setupKeywords = [
-      // Setup Account variants
+    const setupBtn = this.getGenericButton([
       "Set up account",
       "Setup Account",
       "Setup",
@@ -754,24 +754,25 @@ class MicrosoftBot {
       "Siapkan Akun",
       "Atur",
       "Siapkan",
-
-      // "Create new account"
       "Create new account",
       "Create account",
       "Buat akun baru",
       "Buat akun",
-
-      // Bahasa lain
       "Crear cuenta nueva",
       "Crear cuenta",
       "Créer un compte",
       "Neues Konto erstellen",
       "Crea nuovo account",
       "Criar nova conta",
-
       "Mulai",
-    ];
-    const setupBtn = this.getGenericButton(setupKeywords);
+    ]);
+
+    // Deteksi form biodata (berarti halaman Skip setup button)
+    const basicInfoForm = this.page
+      .locator(
+        'input[id*="first" i], input[id*="fname" i], input[id*="firstName" i]',
+      )
+      .first();
 
     const start = Date.now();
     const interval = setInterval(() => {
@@ -781,8 +782,29 @@ class MicrosoftBot {
     }, 15000);
 
     try {
-      await this.waitWithCheck(setupBtn, HARD_TIMEOUT);
-      this._setupBtnReady = true;
+      const winner = await Promise.race([
+        setupBtn
+          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+          .then(() => "setup"),
+        basicInfoForm
+          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+          .then(() => "basicinfo"),
+      ]).catch(() => null);
+
+      if (winner === "setup") {
+        console.log("[INFO] Setup button detected.");
+        this._setupBtnReady = true;
+      } else if (winner === "basicinfo") {
+        console.log(
+          "[INFO] Basic info form already visible - setup button skipped by platform.",
+        );
+        this._setupBtnReady = false;
+      } else {
+        console.warn(
+          "[WARN] Neither Setup button nor basic info form detected within timeout.",
+        );
+        this._setupBtnReady = false;
+      }
     } finally {
       clearInterval(interval);
     }
@@ -1532,9 +1554,7 @@ class MicrosoftBot {
   async acceptTrialAndStart() {
     await this._logStep(16, "Menyetujui trial dan memulai...");
 
-    await this.waitForSpinnerGone(1500);
-
-    // Handle checkbox (Agreement)
+    // Handle checkbox (Agreement) — opsional, skip jika tidak ada
     try {
       const checkboxSelectors = [
         'input[type="checkbox"]',
@@ -1542,122 +1562,167 @@ class MicrosoftBot {
         ".ms-Checkbox-input",
         "#agreement-checkbox",
       ];
-
       const checkbox = this.page.locator(checkboxSelectors.join(", ")).first();
-      if (await checkbox.count()) {
+      const checkboxVisible = await checkbox
+        .isVisible({ timeout: 3000 })
+        .catch(() => false);
+
+      if (checkboxVisible) {
         const isChecked = await checkbox
-          .evaluate((el) => {
-            return (
+          .evaluate(
+            (el) =>
               el.checked ||
               el.getAttribute("aria-checked") === "true" ||
-              el.classList.contains("is-checked")
-            );
-          })
+              el.classList.contains("is-checked"),
+          )
           .catch(() => false);
 
         if (!isChecked) {
           console.log("[INFO] Checking agreement checkbox...");
           await this.randomMouseMove();
           await checkbox.click({ force: true }).catch(() => {});
-          await this.humanDelay(800);
+          await this.humanDelay(1000);
+        } else {
+          console.log("[INFO] Agreement checkbox already checked.");
         }
+      } else {
+        console.log("[INFO] No agreement checkbox found, skipping.");
       }
     } catch (e) {
       console.log("[INFO] Checkbox handling skipped/failed:", e.message);
     }
 
-    // Tunggu tombol enabled — pakai partial keyword yang lebih luas
-    console.log("[INFO] Waiting for Start Trial/Order button to be enabled...");
-    await this.runWithMonitor(
-      this.page.waitForFunction(
-        () => {
-          const keywords = [
-            "start",
-            "trial",
-            "mulai",
-            "coba",
-            "try",
-            "now",
-            "uji",
-            "order",
-            "pesan",
-            "checkout",
-            "buy",
-            "beli",
-            "place",
-            "setup",
-            "subscribe",
-            "langganan",
-            "confirm",
-            "konfirmasi",
-          ];
+    // ✅ Retry loop: tunggu loading selesai, cari tombol, klik
+    // Jika loading 3DS belum selesai saat bot sampai sini, retry akan menanganinya
+    const trialKeywords = [
+      "start trial",
+      "mulai uji coba",
+      "try now",
+      "coba sekarang",
+      "mulai percobaan",
+      "start free trial",
+      "place order",
+      "pesan sekarang",
+      "order now",
+      "checkout",
+      "selesaikan pesanan",
+      "confirm",
+      "konfirmasi",
+      "start",
+      "mulai",
+    ];
 
-          const candidates = [
-            ...document.querySelectorAll(
-              'button, [role="button"], a[role="button"], input[type="submit"]',
-            ),
-          ];
-          const btn = candidates.find((b) => {
-            const text = (
-              b.textContent ||
-              b.value ||
-              b.getAttribute("aria-label") ||
-              ""
-            )
-              .trim()
-              .toLowerCase();
-            return (
-              keywords.some((kw) => text.includes(kw)) &&
-              text.length > 0 &&
-              text.length < 60
-            );
-          });
+    const MAX_RETRY = 3;
+    let clicked = false;
 
-          if (!btn) return false;
-
-          const isEnabled =
-            !btn.disabled &&
-            btn.getAttribute("aria-disabled") !== "true" &&
-            !btn.classList.contains("is-disabled") &&
-            !btn.classList.contains("ms-Button--disabled");
-
-          // Pastikan juga terlihat (tidak hidden)
-          const style = window.getComputedStyle(btn);
-          const isVisible =
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            style.opacity !== "0";
-
-          return isEnabled && isVisible;
-        },
-        { timeout: 45000 }, // Cukup 45 detik untuk nunggu tombol muncul/enabled
-      ),
-      45000,
-    ).catch(() =>
+    for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
       console.log(
-        "[WARN] Could not confirm button enabled, proceeding anyway...",
-      ),
-    );
+        `[INFO] Waiting for Start Trial button (attempt ${attempt}/${MAX_RETRY})...`,
+      );
 
-    await this.clickButtonWithPossibleNames([
-      "Start trial",
-      "Mulai uji coba",
-      "Try now",
-      "Coba sekarang",
-      "Mulai percobaan",
-      "Start free trial",
-      "Start",
-      "Mulai",
-      "Place order",
-      "Pesan sekarang",
-      "Order now",
-      "Checkout",
-      "Selesaikan pesanan",
-      "Confirm",
-      "Konfirmasi",
-    ]);
+      // Tunggu spinner selesai di setiap attempt
+      await this.waitForSpinnerGone(1000, PAYMENT_TIMEOUT);
 
-    console.log("[INFO] Start Trial clicked");
+      // Tunggu tombol enabled
+      const btnReady = await this.page
+        .waitForFunction(
+          (keywords) => {
+            const candidates = [
+              ...document.querySelectorAll(
+                'button, [role="button"], a[role="button"], input[type="submit"]',
+              ),
+            ];
+            const btn = candidates.find((b) => {
+              const text = (
+                b.textContent ||
+                b.value ||
+                b.getAttribute("aria-label") ||
+                ""
+              )
+                .trim()
+                .toLowerCase();
+              return (
+                keywords.some((kw) => text.includes(kw)) &&
+                text.length > 0 &&
+                text.length < 60
+              );
+            });
+            if (!btn) return false;
+            const isEnabled =
+              !btn.disabled &&
+              btn.getAttribute("aria-disabled") !== "true" &&
+              !btn.classList.contains("is-disabled") &&
+              !btn.classList.contains("ms-Button--disabled");
+            const style = window.getComputedStyle(btn);
+            const isVisible =
+              style.display !== "none" &&
+              style.visibility !== "hidden" &&
+              style.opacity !== "0";
+            return isEnabled && isVisible;
+          },
+          trialKeywords,
+          { timeout: PAYMENT_TIMEOUT },
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      if (!btnReady) {
+        console.warn(
+          `[WARN] Start Trial button not ready on attempt ${attempt}.`,
+        );
+        await this.humanDelay(2000);
+        continue;
+      }
+
+      // Klik via JS
+      const jsClicked = await this.page.evaluate((keywords) => {
+        const candidates = [
+          ...document.querySelectorAll(
+            'button, [role="button"], a[role="button"], input[type="submit"]',
+          ),
+        ];
+        const btn = candidates.find((b) => {
+          const text = (
+            b.textContent ||
+            b.value ||
+            b.getAttribute("aria-label") ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+          return (
+            text.length > 0 &&
+            text.length < 60 &&
+            keywords.some((kw) => text.includes(kw)) &&
+            !b.disabled &&
+            b.getAttribute("aria-disabled") !== "true"
+          );
+        });
+        if (btn) {
+          btn.click();
+          return btn.textContent?.trim() || "clicked";
+        }
+        return null;
+      }, trialKeywords);
+
+      if (jsClicked) {
+        console.log(
+          `[INFO] Start Trial JS clicked: "${jsClicked}" (attempt ${attempt})`,
+        );
+        clicked = true;
+        break;
+      }
+      console.warn(`[WARN] JS click failed on attempt ${attempt}.`);
+      await this.humanDelay(2000);
+    }
+
+    if (!clicked) {
+      console.warn(
+        "[WARN] All retry attempts failed for Start Trial, proceeding anyway...",
+      );
+    }
+
+    console.log("[INFO] Start Trial clicked, waiting for navigation...");
 
     await this.runWithMonitor(
       Promise.race([
