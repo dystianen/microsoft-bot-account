@@ -734,7 +734,7 @@ class MicrosoftBot {
   }
 
   async submitEmailAndWaitForSetup() {
-    console.log("[STEP 6] Submitting email and waiting for Setup button");
+    await this._logStep(6, "Submit email & menunggu tombol Setup...");
     await this.clickButtonWithPossibleNames([
       "Next",
       "Selanjutnya",
@@ -1006,8 +1006,11 @@ class MicrosoftBot {
     ]);
   }
 
-  async confirmAddressIfPrompted() {
-    await this._logStep(10, "Mengecek konfirmasi alamat...");
+  async confirmAddressIfPrompted(
+    step = 10,
+    msg = "Mengecek konfirmasi alamat...",
+  ) {
+    await this._logStep(step, msg);
 
     await this.waitForSpinnerGone();
 
@@ -1050,7 +1053,7 @@ class MicrosoftBot {
   }
 
   async fillPassword() {
-    await this._logStep(11, "Mengisi password dan konfirmasi domain...");
+    await this._logStep(10, "Mengisi password dan konfirmasi domain...");
 
     await this.waitForSpinnerGone();
     try {
@@ -1139,7 +1142,7 @@ class MicrosoftBot {
   }
 
   async handleOptionalSignIn() {
-    console.log("[STEP 11.5] Checking for optional Sign In prompt...");
+    await this._logStep(11, "Mengecek opsi Sign In tambahan...");
 
     try {
       // Tunggu halaman benar-benar settle setelah submit password
@@ -1353,6 +1356,7 @@ class MicrosoftBot {
   }
 
   async submitPaymentAndWaitResult() {
+    await this._logStep(14, "Submit pembayaran & menunggu hasil...");
     await this.clickButtonWithPossibleNames([
       "Save",
       "Simpan",
@@ -1437,7 +1441,13 @@ class MicrosoftBot {
                     text.includes("akun"))) ||
                 window.location.href.includes("ordersummary") ||
                 window.location.href.includes("setup-account") ||
-                window.location.href.includes("review")
+                window.location.href.includes("review") ||
+                // ✅ Tambahan: Deteksi checkbox kesepakatan sebagai sinyal keberhasilan
+                document.querySelector('input[type="checkbox"], [role="checkbox"], .ms-Checkbox-input') !== null ||
+                text.includes("agreement") ||
+                text.includes("persetujuan") ||
+                text.includes("syarat dan ketentuan") ||
+                text.includes("terms and conditions")
               );
             },
             { timeout },
@@ -1518,7 +1528,7 @@ class MicrosoftBot {
   }
 
   async acceptTrialAndStart() {
-    console.log("[STEP 14] Clicking Start Trial button");
+    await this._logStep(16, "Menyetujui trial dan memulai...");
 
     await this.waitForSpinnerGone(1500);
 
@@ -1665,7 +1675,7 @@ class MicrosoftBot {
   }
 
   async clickGetStartedButton() {
-    await this._logStep(15, "Klik tombol Get Started terakhir...");
+    await this._logStep(17, "Klik tombol Get Started terakhir...");
 
     // Kadang loading setelah accept trial sangat lama
     await this.waitForSpinnerGone(2000);
@@ -1693,7 +1703,7 @@ class MicrosoftBot {
   }
 
   async extractFinalDomainAccount() {
-    await this._logStep(16, "Finalisasi data akun...");
+    await this._logStep(18, "Finalisasi data akun...");
 
     if (this.extractedDomainEmail && this.extractedDomainPassword) {
       console.log(
@@ -1938,7 +1948,11 @@ class MicrosoftBot {
       );
       await this.executeStep(
         "Confirming address (pre-password)",
-        () => this.confirmAddressIfPrompted(),
+        () =>
+          this.confirmAddressIfPrompted(
+            9,
+            "Mengecek konfirmasi alamat (awal)...",
+          ),
         [300, 600],
       );
       await this.executeStep(
@@ -1970,7 +1984,11 @@ class MicrosoftBot {
       );
       await this.executeStep(
         "Confirming address (post-payment)",
-        () => this.confirmAddressIfPrompted(),
+        () =>
+          this.confirmAddressIfPrompted(
+            15,
+            "Mengecek konfirmasi alamat (post-payment)...",
+          ),
         [300, 600],
       );
 

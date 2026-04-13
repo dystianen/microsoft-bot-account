@@ -148,7 +148,7 @@ class RemoteLogger {
     });
   }
 
-  getProgressBar(current, total = 16) {
+  getProgressBar(current, total = 18) {
     const size = 10;
     const progress = Math.min(Math.max(current / total, 0), 1);
     const filled = Math.round(size * progress);
@@ -173,9 +173,9 @@ class RemoteLogger {
     console.log(`[${user}] [STEP ${stepNum}] ${msg}`);
 
     let text = `${identifier}\n`;
-    text += `📍 <b>Current:</b> Step ${stepNum}/16\n`;
+    text += `📍 <b>Current:</b> Step ${stepNum}/18\n`;
     text += `📝 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
-    text += `${this.getProgressBar(stepNum, 16)}`;
+    text += `${this.getProgressBar(stepNum, 18)}`;
 
     await this._sendOrEdit(email, text, false);
   }
