@@ -798,7 +798,9 @@ class MicrosoftBot {
       .first();
 
     // Deteksi halaman OTP/Verifikasi (yang diminta user sebagai error)
-    const otpPage = this.page.locator('text=/Verification code|Enter the code|Kode verifikasi/i').first();
+    const otpPage = this.page
+      .locator("text=/Verification code|Enter the code|Kode verifikasi/i")
+      .first();
 
     const start = Date.now();
     const interval = setInterval(() => {
@@ -829,8 +831,12 @@ class MicrosoftBot {
         );
         this._setupBtnReady = false;
       } else if (winner === "otp") {
-        console.error("[ERROR] OTP Verification page detected! Marking as error as requested.");
-        throw new Error("OTP_VERIFICATION_REQUIRED: Halaman verifikasi kode muncul. Tidak bisa lanjut otomatis.");
+        console.error(
+          "[ERROR] OTP Verification page detected! Marking as error as requested.",
+        );
+        throw new Error(
+          "OTP_VERIFICATION_REQUIRED: Halaman verifikasi kode muncul. Tidak bisa lanjut otomatis.",
+        );
       } else {
         console.warn(
           "[WARN] Neither Setup button nor basic info form detected within timeout.",
@@ -1912,7 +1918,6 @@ class MicrosoftBot {
         "error code",
         "correlation id",
         "715-123280",
-        "not available",
         "reached the limit",
         "too many times",
         "can't create your account",
