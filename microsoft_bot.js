@@ -108,18 +108,12 @@ class MicrosoftBot {
         height: 720,
       };
 
-      // Target localized area instead of just anywhere to be more realistic
       const x = Math.floor(Math.random() * width);
       const y = Math.floor(Math.random() * height);
 
-      // Use more steps for smoother/slower movement
-      const steps = Math.floor(Math.random() * 15) + 10;
+      // CPU Saver: Use fewer steps for movement (2-4 steps instead of 10-25) to reduce CDP event flooding
+      const steps = Math.floor(Math.random() * 3) + 2;
       await this.page.mouse.move(x, y, { steps });
-
-      // Occasionally "flutter" the mouse
-      if (Math.random() > 0.8) {
-        await this.page.mouse.move(x + 5, y + 5, { steps: 5 });
-      }
     } catch (e) {}
   }
 
@@ -129,7 +123,8 @@ class MicrosoftBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        await this.page.waitForTimeout(2500).catch(() => {
+        // CPU Saver: Relaxing polling interval from 2500ms to 5000ms
+        await this.page.waitForTimeout(5000).catch(() => {
           isDone = true;
         });
         if (isDone) break;
@@ -480,6 +475,18 @@ class MicrosoftBot {
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
     this.profileId = this.wsUrl.split("/").pop();
+
+    // --- CPU Saver: Resource Blocking (Network Interception) ---
+    // Memblokir assets gambar, media, dan font. Dipertahankan stylesheet (CSS) karena dibutuhkan untuk selector layout.
+    await this.context.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (["image", "media", "font"].includes(type)) {
+        route.abort("blockedbyclient");
+      } else {
+        route.continue();
+      }
+    });
+    // -------------------------------------------------------------
 
     // Check IP vs billing address country (Anti-Fraud)
     try {
