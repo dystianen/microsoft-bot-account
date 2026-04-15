@@ -45,7 +45,7 @@ class MicrosoftBot {
 
   // ─── Core helpers ────────────────────────────────────────────────────────────
 
-  async humanDelay(min = 1000, max = 2000) {
+  async humanDelay(min = 1000, max = 3000) {
     const delay = Math.floor(Math.random() * (max - min + 1) + min);
     await this.page.waitForTimeout(delay);
   }
