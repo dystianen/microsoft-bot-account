@@ -413,10 +413,11 @@ class MicrosoftBot {
         );
 
         try {
-          await this.humanClick(freshOption, { timeout: HARD_TIMEOUT });
-        } catch {
-          console.log("[DROPDOWN] Normal click blocked, using JS click...");
+          // JS click langsung — tanpa hover/mouse move agar lebih cepat
           await freshOption.evaluate((el) => el.click());
+        } catch {
+          console.log("[DROPDOWN] JS click failed, using humanClick fallback...");
+          await this.humanClick(freshOption, { timeout: HARD_TIMEOUT });
         }
 
         await this.page
@@ -969,12 +970,12 @@ class MicrosoftBot {
       .locator('input[id*="region" i], input[id*="state" i]')
       .first();
 
+    // Pakai timeout pendek (5s) — hanya untuk cek apakah input atau dropdown
     const regionIsInput = await regionInput
-      .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+      .waitFor({ state: "visible", timeout: 5000 })
       .then(() => true)
       .catch(() => false);
 
-    await this.page.waitForTimeout(400);
     if (regionIsInput) {
       await this.humanPaste(
         regionInput,
