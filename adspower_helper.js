@@ -108,7 +108,7 @@ class AdsPowerHelper {
   async startBrowser(profileId, headlessOverride = null) {
     try {
       const isHeadless = headlessOverride !== null ? headlessOverride : config.headless;
-      const headlessParam = isHeadless ? "&open_tabs=1&headless=1" : "";
+      const headlessParam = `&open_tabs=1&headless=${isHeadless ? 1 : 0}`;
       const response = await axios.get(
         `${this.baseUrl}/api/v1/browser/start?user_id=${profileId}${headlessParam}`,
         {
