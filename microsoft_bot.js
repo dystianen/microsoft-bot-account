@@ -416,7 +416,9 @@ class MicrosoftBot {
           // JS click langsung — tanpa hover/mouse move agar lebih cepat
           await freshOption.evaluate((el) => el.click());
         } catch {
-          console.log("[DROPDOWN] JS click failed, using humanClick fallback...");
+          console.log(
+            "[DROPDOWN] JS click failed, using humanClick fallback...",
+          );
           await this.humanClick(freshOption, { timeout: HARD_TIMEOUT });
         }
 
@@ -820,9 +822,7 @@ class MicrosoftBot {
         ]),
         HARD_TIMEOUT,
       ).catch((e) => {
-        console.warn(
-          `[WARN] page state detection ended: ${e.message}`,
-        );
+        console.warn(`[WARN] page state detection ended: ${e.message}`);
         return null;
       });
 
@@ -832,9 +832,7 @@ class MicrosoftBot {
         );
         this._setupBtnReady = false;
       } else if (winner === "otp") {
-        console.error(
-          "[ERROR] OTP Verification page detected!",
-        );
+        console.error("[ERROR] OTP Verification page detected!");
         throw new Error(
           "OTP_VERIFICATION_REQUIRED: Halaman verifikasi kode muncul. Tidak bisa lanjut otomatis.",
         );
@@ -884,7 +882,9 @@ class MicrosoftBot {
     ]);
 
     if (!clicked) {
-      console.warn("[STEP 7] Setup button not found — platform may have skipped it.");
+      console.warn(
+        "[STEP 7] Setup button not found — platform may have skipped it.",
+      );
     }
 
     this._setupBtnReady = false;
@@ -1392,7 +1392,7 @@ class MicrosoftBot {
     console.log("Typing card number...");
     await cardLocator.click();
     await this.humanPaste(cardLocator, this.accountConfig.payment.cardNumber);
-    await this.humanDelay(1500);
+    await this.humanDelay(592);
 
     console.log("Typing CVV...");
     const cvvLocator = this.page
@@ -1402,7 +1402,7 @@ class MicrosoftBot {
       .first();
     await cvvLocator.click();
     await this.humanPaste(cvvLocator, this.accountConfig.payment.cvv);
-    await this.humanDelay(1000);
+    await this.humanDelay(510);
 
     let expMonth = this.accountConfig.payment.expMonth.toString();
     if (expMonth.length === 1) expMonth = "0" + expMonth;
