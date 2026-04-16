@@ -4,7 +4,7 @@ const config = require("./config");
 const remoteLogger = require("./remote_logger");
 
 const SPINNER_SELECTOR =
-  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu")';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
 const HARD_TIMEOUT = config.hardTimeout;
@@ -589,7 +589,9 @@ class MicrosoftBot {
           title.toUpperCase().includes(targetPlan.toUpperCase()) ||
           text.toUpperCase().includes(targetPlan.toUpperCase())
         ) {
-          console.log(`[INFO] Matching card found for ${targetPlan} at index ${i}`);
+          console.log(
+            `[INFO] Matching card found for ${targetPlan} at index ${i}`,
+          );
           targetCard = card;
           break;
         }
@@ -607,45 +609,45 @@ class MicrosoftBot {
             `[INFO] Clicking "Try for free" (Target: ${targetPlan}) via JS click...`,
           );
 
-        const [popup] = await Promise.all([
-          this.page
-            .context()
-            .waitForEvent("page", { timeout: HARD_TIMEOUT })
-            .catch(() => null),
-          // Gunakan JS Click untuk menghindari timeout pada Playwright Click
-          tryFreeBtn
-            .evaluate((el) => el.click())
-            .catch(async () => {
-              console.log(
-                "[INFO] JS click failed, attempting native humanClick...",
-              );
-              await this.humanClick(tryFreeBtn).catch((e) =>
-                console.error("[ERROR] Native click also failed:", e.message),
-              );
-            }),
-        ]);
+          const [popup] = await Promise.all([
+            this.page
+              .context()
+              .waitForEvent("page", { timeout: HARD_TIMEOUT })
+              .catch(() => null),
+            // Gunakan JS Click untuk menghindari timeout pada Playwright Click
+            tryFreeBtn
+              .evaluate((el) => el.click())
+              .catch(async () => {
+                console.log(
+                  "[INFO] JS click failed, attempting native humanClick...",
+                );
+                await this.humanClick(tryFreeBtn).catch((e) =>
+                  console.error("[ERROR] Native click also failed:", e.message),
+                );
+              }),
+          ]);
 
-        if (popup) {
-          this.page = popup;
-          console.log(
-            "[INFO] Switched to new tab. Waiting for content settle...",
-          );
-          // Wait for full load and a bit extra for hydration
-          await this.page
-            .waitForLoadState("load", { timeout: HARD_TIMEOUT })
-            .catch(() => {});
-          await this.waitForSpinnerGone();
+          if (popup) {
+            this.page = popup;
+            console.log(
+              "[INFO] Switched to new tab. Waiting for content settle...",
+            );
+            // Wait for full load and a bit extra for hydration
+            await this.page
+              .waitForLoadState("load", { timeout: HARD_TIMEOUT })
+              .catch(() => {});
+            await this.waitForSpinnerGone();
 
-          // Wait specifically for any button to ensure JS is likely ready
-          await this.page
-            .locator('button, [role="button"], a.btn')
-            .first()
-            .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
-            .catch(() => {});
-          await this.humanDelay(1500); // Small grace period for event listeners to attach
-          return;
+            // Wait specifically for any button to ensure JS is likely ready
+            await this.page
+              .locator('button, [role="button"], a.btn')
+              .first()
+              .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+              .catch(() => {});
+            await this.humanDelay(1500); // Small grace period for event listeners to attach
+            return;
+          }
         }
-      }
       }
     }
 
@@ -777,28 +779,31 @@ class MicrosoftBot {
 
     console.log("[INFO] Waiting for Setup button OR basic info form...");
 
-    const setupBtn = this.getGenericButton([
-      "Set up account",
-      "Setup Account",
-      "Setup",
-      "Set up",
-      "Siapkan akun",
-      "Atur Akun",
-      "Siapkan Akun",
-      "Atur",
-      "Siapkan",
-      "Create new account",
-      "Create account",
-      "Buat akun baru",
-      "Buat akun",
-      "Crear cuenta nueva",
-      "Crear cuenta",
-      "Créer un compte",
-      "Neues Konto erstellen",
-      "Crea nuovo account",
-      "Criar nova conta",
-      "Mulai",
-    ]);
+    // Deteksi tombol Setup Account (gunakan locator langsung, bukan getGenericButton yang tidak ada)
+    const setupBtn = this.page
+      .locator(
+        [
+          'button:has-text("Set up account")',
+          'button:has-text("Setup Account")',
+          'button:has-text("Setup")',
+          'button:has-text("Set up")',
+          'button:has-text("Siapkan akun")',
+          'button:has-text("Atur Akun")',
+          'button:has-text("Siapkan Akun")',
+          'button:has-text("Atur")',
+          'button:has-text("Siapkan")',
+          'button:has-text("Create new account")',
+          'button:has-text("Create account")',
+          'button:has-text("Buat akun baru")',
+          'button:has-text("Buat akun")',
+          'button:has-text("Mulai")',
+          '[role="button"]:has-text("Set up account")',
+          '[role="button"]:has-text("Create new account")',
+          '[role="button"]:has-text("Siapkan akun")',
+          '[role="button"]:has-text("Buat akun baru")',
+        ].join(", "),
+      )
+      .first();
 
     // Deteksi form biodata (berarti halaman langsung tampilkan form, skip setup button)
     const basicInfoForm = this.page
@@ -812,7 +817,7 @@ class MicrosoftBot {
       .locator(
         [
           // Teks di sekitarnya
-          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode/i',
+          "text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode/i",
           // Input field
           'input[aria-label*="code" i]',
           'input[id*="code" i]',
@@ -833,17 +838,25 @@ class MicrosoftBot {
     }, 15000);
 
     try {
-      const winner = await Promise.race([
-        setupBtn
-          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
-          .then(() => "setup"),
-        basicInfoForm
-          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
-          .then(() => "basicinfo"),
-        otpPage
-          .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
-          .then(() => "otp"),
-      ]).catch(() => null);
+      const winner = await this.runWithMonitor(
+        Promise.race([
+          setupBtn
+            .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+            .then(() => "setup"),
+          basicInfoForm
+            .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+            .then(() => "basicinfo"),
+          otpPage
+            .waitFor({ state: "visible", timeout: HARD_TIMEOUT })
+            .then(() => "otp"),
+        ]),
+        HARD_TIMEOUT,
+      ).catch((e) => {
+        console.warn(
+          `[WARN] setup wait error or monitor trigger: ${e.message}`,
+        );
+        return null;
+      });
 
       if (winner === "setup") {
         console.log("[INFO] Setup button detected.");
@@ -861,10 +874,11 @@ class MicrosoftBot {
           "OTP_VERIFICATION_REQUIRED: Halaman verifikasi kode muncul. Tidak bisa lanjut otomatis.",
         );
       } else {
+        // null = timeout/unknown — tetap coba klik setup button di step berikutnya
         console.warn(
-          "[WARN] Neither Setup button nor basic info form detected within timeout.",
+          `[WARN] Neither Setup button nor basic info form detected within timeout. Current URL: ${this.page.url()}`,
         );
-        this._setupBtnReady = false;
+        this._setupBtnReady = null; // null = tetap coba, bukan skip
       }
     } finally {
       clearInterval(interval);
@@ -872,9 +886,11 @@ class MicrosoftBot {
   }
 
   async clickSetupAccountButton() {
+    // false = form biodata sudah langsung muncul, skip klik setup
+    // null atau true = tetap coba klik (karena mungkin button ada)
     if (this._setupBtnReady === false) {
       console.log(
-        "[STEP 7] Setup already skipped or detected as basic info form, skipping click.",
+        "[STEP 7] Setup skipped: basic info form already visible.",
       );
       return;
     }
