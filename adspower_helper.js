@@ -108,20 +108,41 @@ class AdsPowerHelper {
   async startBrowser(profileId, headlessOverride = null) {
     try {
       const isHeadless = headlessOverride !== null ? headlessOverride : config.headless;
-      const headlessParam = `&open_tabs=1&headless=${isHeadless ? 1 : 0}`;
-      const response = await axios.get(
-        `${this.baseUrl}/api/v1/browser/start?user_id=${profileId}${headlessParam}`,
+      
+      // Menggunakan standar API V2 sesuai dokumentasi USER
+      const launchArgs = [
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-notifications",
+        `--display=${process.env.DISPLAY || ":20"}`
+      ];
+
+      const response = await axios.post(
+        `${this.baseUrl}/api/v2/browser-profile/start`,
+        {
+          profile_id: profileId,
+          headless: isHeadless ? "1" : "0",
+          launch_args: launchArgs,
+          last_opened_tabs: "1",
+          proxy_detection: "1",
+          password_filling: "0",
+          password_saving: "0",
+          cdp_mask: "1",
+          delete_cache: "0",
+          device_scale: "1"
+        },
         {
           headers: {
             Authorization: `Bearer ${config.adsPower.apiKey}`,
             "api-key": config.adsPower.apiKey,
+            "Content-Type": "application/json"
           },
-        },
+        }
       );
 
       if (response.data.code !== 0) {
         throw new Error(
-          `Failed to start AdsPower browser: ${response.data.msg}`,
+          `Failed to start AdsPower browser (V2): ${response.data.msg}`,
         );
       }
 
@@ -129,7 +150,7 @@ class AdsPowerHelper {
       const wsUrl = wsData.puppeteer || wsData.selenium;
 
       if (!wsUrl) {
-        throw new Error("Could not find WebSocket URL in AdsPower response");
+        throw new Error("Could not find WebSocket URL in AdsPower V2 response");
       }
 
       return {
