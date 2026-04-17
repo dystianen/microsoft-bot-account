@@ -4,7 +4,7 @@ const config = require('../config');
 const remoteLogger = require('../utils/logger');
 
 const SPINNER_SELECTOR =
-  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu")';
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu"), :has-text("Veuillez patienter"), :has-text("Chargement du sous-total")';
 
 // Safety net — sangat besar, hanya untuk mencegah hang selamanya
 const HARD_TIMEOUT = config.hardTimeout;
@@ -548,7 +548,9 @@ class MicrosoftBot {
 
       if (cardToUse) {
         const tryFreeBtn = cardToUse
-          .locator('a:has-text("Try for free"), a:has-text("Coba gratis")')
+          .locator(
+            'a:has-text("Try for free"), a:has-text("Coba gratis"), a:has-text("Essayez gratuitement")'
+          )
           .first();
 
         if ((await tryFreeBtn.count()) > 0) {
@@ -594,7 +596,7 @@ class MicrosoftBot {
     console.log("[INFO] Scanning for global 'Try for free' button...");
     const globalBtn = this.page
       .locator(
-        'a:has-text("Try for free"), a:has-text("Coba gratis"), button:has-text("Try for free")'
+        'a:has-text("Try for free"), a:has-text("Coba gratis"), button:has-text("Try for free"), a:has-text("Essayez gratuitement"), a:has-text("Essai gratuit"), button:has-text("Essai gratuit")'
       )
       .first();
     const [popupGlobal] = await Promise.all([
@@ -668,7 +670,14 @@ class MicrosoftBot {
       console.log('[STEP 4] 1 month selection logic skipped:', e.message);
     }
 
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Continue', 'Berikutnya']);
+    await this.clickButtonWithPossibleNames([
+      'Next',
+      'Selanjutnya',
+      'Continue',
+      'Berikutnya',
+      'Suivant',
+      'Continuer',
+    ]);
   }
 
   async fillEmail() {
@@ -692,7 +701,14 @@ class MicrosoftBot {
 
   async submitEmailAndWaitForSetup() {
     await this._logStep(6, 'Submit email & menunggu tombol Setup...');
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya']);
+    await this.clickButtonWithPossibleNames([
+      'Next',
+      'Selanjutnya',
+      'Berikutnya',
+      'Suivant',
+      'Suivante',
+      'Nächste',
+    ]);
 
     // Tunggu spinner selesai dulu sebelum mendeteksi elemen berikutnya
     console.log('[INFO] Waiting for page to settle after email submit...');
@@ -709,13 +725,14 @@ class MicrosoftBot {
     const otpPage = this.page
       .locator(
         [
-          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode/i',
+          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i',
           'input[aria-label*="code" i]',
           'input[id*="code" i]',
           'input[name*="code" i]',
           'input[placeholder*="code" i]',
           'button:has-text("Verifikasi")',
           'button:has-text("Verify")',
+          'button:has-text("Vérifier")',
         ].join(', ')
       )
       .first();
@@ -786,6 +803,8 @@ class MicrosoftBot {
       'Crear cuenta nueva',
       'Crear cuenta',
       'Créer un compte',
+      'Configuration',
+      'Configurer le compte',
       'Neues Konto erstellen',
       'Crea nuovo account',
       'Criar nova conta',
@@ -941,7 +960,14 @@ class MicrosoftBot {
     console.log("[STEP 8] Pausing for 'thinking' delay before submit...");
     await this.humanDelay(800, 1500);
 
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Continue']);
+    await this.clickButtonWithPossibleNames([
+      'Next',
+      'Selanjutnya',
+      'Berikutnya',
+      'Continue',
+      'Suivant',
+      'Continuer',
+    ]);
   }
 
   async confirmAddressIfPrompted(step = 10, msg = 'Mengecek konfirmasi alamat...') {
@@ -955,9 +981,11 @@ class MicrosoftBot {
           'button:has-text("Use this address")',
           'button:has-text("Use address")',
           'button:has-text("Gunakan alamat ini")',
+          'button:has-text("Utiliser cette adresse")',
           'button[aria-label*="Use this address" i]',
           'button[aria-label*="Use address" i]',
           'button[aria-label*="Gunakan alamat ini" i]',
+          'button[aria-label*="Utiliser cette adresse" i]',
         ].join(', ')
       )
       .first();
@@ -1059,7 +1087,9 @@ class MicrosoftBot {
       'Next',
       'Selanjutnya',
       'Berikutnya',
+      'Suivant',
       'Finish',
+      'Terminer',
       'Selesai',
     ]);
   }
@@ -1083,8 +1113,10 @@ class MicrosoftBot {
             'button:has-text("Sign In")',
             'button:has-text("Sign-In")',
             'button:has-text("Masuk")',
+            'button:has-text("Se connecter")',
             'a:has-text("Sign In")',
             'a:has-text("Masuk")',
+            'a:has-text("Se connecter")',
             '[data-bi-id*="signin" i]',
             'button[id*="signin" i]',
           ].join(', ')
@@ -1158,7 +1190,9 @@ class MicrosoftBot {
       }
 
       await popup.waitForLoadState('domcontentloaded');
-      const yesBtn = popup.locator('button:has-text("Yes"), input[value="Yes"], #idSIButton9');
+      const yesBtn = popup.locator(
+        'button:has-text("Yes"), button:has-text("Oui"), input[value="Yes"], input[value="Oui"], #idSIButton9'
+      );
       const yesVisible = await yesBtn
         .waitFor({ state: 'visible', timeout: HARD_TIMEOUT })
         .then(() => true)
@@ -1194,7 +1228,7 @@ class MicrosoftBot {
         }),
         this.page
           .locator(
-            'input[id*="card" i], input[id*="accounttoken" i], input[aria-label*="Nomor kartu" i], input[aria-label*="card number" i]'
+            'input[id*="card" i], input[id*="accounttoken" i], input[aria-label*="Nomor kartu" i], input[aria-label*="card number" i], input[aria-label*="numéro de carte" i]'
           )
           .first()
           .waitFor({ state: 'visible', timeout: HARD_TIMEOUT }),
@@ -1265,8 +1299,10 @@ class MicrosoftBot {
     await this._logStep(14, 'Submit pembayaran & menunggu hasil...');
     await this.clickButtonWithPossibleNames([
       'Save',
+      'Enregistrer',
       'Simpan',
       'Next',
+      'Suivant',
       'Selanjutnya',
       'Berikutnya',
     ]);
@@ -1289,8 +1325,10 @@ class MicrosoftBot {
         'button:has-text("Use this address")',
         'button:has-text("Use address")',
         'button:has-text("Gunakan alamat ini")',
+        'button:has-text("Utiliser cette adresse")',
         'button[aria-label*="Use this address" i]',
         'button[aria-label*="Gunakan alamat ini" i]',
+        'button[aria-label*="Utiliser cette adresse" i]',
       ].join(', ');
 
       const errorWatcher = new Promise(async (resolve, reject) => {
@@ -1346,6 +1384,9 @@ class MicrosoftBot {
                 text.includes('ringkasan pesanan') ||
                 text.includes('setup your account') ||
                 text.includes('siapkan akun') ||
+                text.includes('récapitulatif de la commande') || // Review order / order summary
+                text.includes('vérifiez vos informations') || // Check your info
+                text.includes('configurer votre compte') || // setup your account
                 // Avoid too generic "mulai" unless it's a specific page pattern
                 (text.includes('mulai') &&
                   (text.includes('pesanan') || text.includes('data') || text.includes('akun'))) ||
@@ -1359,7 +1400,9 @@ class MicrosoftBot {
                 text.includes('agreement') ||
                 text.includes('persetujuan') ||
                 text.includes('syarat dan ketentuan') ||
-                text.includes('terms and conditions')
+                text.includes('terms and conditions') ||
+                text.includes('contrat de service') ||
+                text.includes('conditions d’utilisation')
               );
             },
             { timeout }
@@ -1383,8 +1426,10 @@ class MicrosoftBot {
         'button:has-text("Use this address")',
         'button:has-text("Use address")',
         'button:has-text("Gunakan alamat ini")',
+        'button:has-text("Utiliser cette adresse")',
         'button[aria-label*="Use this address" i]',
         'button[aria-label*="Gunakan alamat ini" i]',
+        'button[aria-label*="Utiliser cette adresse" i]',
       ].join(', ');
 
       try {
@@ -1424,7 +1469,9 @@ class MicrosoftBot {
           .catch(() => '');
         // Atau baca dari body teks secara umum
         const bodyMsg = await this.page
-          .locator('text=/check that the details|coba kartu lain|try a different card/i')
+          .locator(
+            'text=/check that the details|coba kartu lain|try a different card|vérifiez les détails|essayez une autre carte/i'
+          )
           .first()
           .textContent()
           .catch(() => '');
@@ -1485,17 +1532,23 @@ class MicrosoftBot {
     const trialKeywords = [
       'start trial',
       'mulai uji coba',
+      'commencer l\'essai',
+      'essayer l\'essai',
       'try now',
       'coba sekarang',
+      'essayer maintenant',
       'mulai percobaan',
       'start free trial',
       'place order',
       'pesan sekarang',
+      'passer la commande',
+      'commander maintenant',
       'order now',
       'checkout',
       'selesaikan pesanan',
       'confirm',
       'konfirmasi',
+      'confirmer',
       'start',
       'mulai',
     ];
@@ -1616,8 +1669,10 @@ class MicrosoftBot {
       'Next',
       'Selanjutnya',
       'Berikutnya',
+      'Suivant',
       'Get started',
       'Get Started',
+      'Commencer',
       'Mulai',
       'Mulai percobaan',
     ]);
@@ -1668,13 +1723,13 @@ class MicrosoftBot {
       const url = this.page.url().toLowerCase();
 
       if (
-        /error|sorry|happened|wrong|failed|terjadi kesalahan/i.test(title) ||
+        /error|sorry|happened|wrong|failed|terjadi kesalahan|erreur|désolé|problème/i.test(title) ||
         url.includes('error')
       ) {
         // Double check text content to avoid false positives from "error reporting" pages etc.
         const bodyText = await this.page.textContent('body').catch(() => '');
         if (
-          /something went wrong|something happened|terjadi kesalahan|terjadi sesuatu/i.test(
+          /something went wrong|something happened|terjadi kesalahan|terjadi sesuatu|une erreur s'est produite|un problème est survenu/i.test(
             bodyText
           )
         ) {
@@ -1685,7 +1740,9 @@ class MicrosoftBot {
       // 2. Cek keberadaan iframe Arkose/Captcha secara eksplisit
       const captchaIndicators = [
         'button:has-text("solve the puzzle")',
+        'button:has-text("résoudre le puzzle")',
         'h2:has-text("Protecting your account")',
+        'h2:has-text("Protection de votre compte")',
       ];
 
       for (const selector of captchaIndicators) {
@@ -1743,7 +1800,10 @@ class MicrosoftBot {
         'Kode verifikasi',
         'Enter the code',
         'Masukkan kode',
+        'Entrez le code',
         'Kami telah mengirim kode',
+        'Nous avons envoyé le code',
+        'Code de vérification',
       ];
 
       for (const frame of this.page.frames()) {
