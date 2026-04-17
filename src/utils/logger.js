@@ -1,6 +1,6 @@
-const axios = require("axios");
-const os = require("os");
-const config = require("./config");
+const axios = require('axios');
+const os = require('os');
+const config = require('../config');
 
 class RemoteLogger {
   constructor() {
@@ -30,20 +30,17 @@ class RemoteLogger {
         const res = await axios.post(
           `https://api.telegram.org/bot${this.token}/${endpoint}`,
           payload,
-          { timeout: 15000 }, // Tambahkan timeout agar tidak hang selamanya
+          { timeout: 15000 } // Tambahkan timeout agar tidak hang selamanya
         );
         return res;
       } catch (err) {
         const status = err.response?.status;
-        const desc = err.response?.data?.description || "";
+        const desc = err.response?.data?.description || '';
 
         // Rate limited — beri info di console agar user tahu bot tidak mati
         if (status === 429) {
-          const retryAfter =
-            (err.response?.data?.parameters?.retry_after || 5) * 1000;
-          console.warn(
-            `[RemoteLogger] Rate limited, waiting ${retryAfter}ms (Attempt ${attempt})`,
-          );
+          const retryAfter = (err.response?.data?.parameters?.retry_after || 5) * 1000;
+          console.warn(`[RemoteLogger] Rate limited, waiting ${retryAfter}ms (Attempt ${attempt})`);
           await new Promise((r) => setTimeout(r, retryAfter));
           continue;
         }
@@ -51,20 +48,20 @@ class RemoteLogger {
         if (desc.includes("can't parse entities")) {
           payload = {
             ...payload,
-            text: (payload.text || "").replace(/<[^>]*>?/gm, ""),
-            parse_mode: "",
+            text: (payload.text || '').replace(/<[^>]*>?/gm, ''),
+            parse_mode: '',
           };
           continue;
         }
 
-        if (desc.includes("message is not modified")) return null;
+        if (desc.includes('message is not modified')) return null;
         if (attempt === retries) throw err;
         await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
     }
   }
 
-  async send(text, parse_mode = "HTML") {
+  async send(text, parse_mode = 'HTML') {
     if (!this.token || !this.chatId?.trim()) return;
 
     const CHUNK_SIZE = 4000;
@@ -76,7 +73,7 @@ class RemoteLogger {
       let currentIdx = 0;
       while (currentIdx < text.length) {
         let chunk = text.substring(currentIdx, currentIdx + CHUNK_SIZE);
-        const lastNewline = chunk.lastIndexOf("\n");
+        const lastNewline = chunk.lastIndexOf('\n');
         if (lastNewline > 500 && currentIdx + CHUNK_SIZE < text.length) {
           chunk = text.substring(currentIdx, currentIdx + lastNewline);
           currentIdx += lastNewline + 1;
@@ -89,11 +86,11 @@ class RemoteLogger {
 
     for (const chunk of chunks) {
       await this._enqueue(() =>
-        this._post("sendMessage", {
+        this._post('sendMessage', {
           chat_id: this.chatId,
           text: chunk,
           parse_mode,
-        }),
+        })
       );
     }
   }
@@ -110,19 +107,19 @@ class RemoteLogger {
           // Sudah ada message sebelumnya — edit saja (termasuk status "pending")
           // Jika messageId adalah "pending", edit ini akan gagal di Telegram (expected)
           // dan masuk ke block catch untuk kirim baru.
-          await this._post("editMessageText", {
+          await this._post('editMessageText', {
             chat_id: this.chatId,
             message_id: messageId,
             text: truncated,
-            parse_mode: "HTML",
+            parse_mode: 'HTML',
           });
         } else {
-          this.sessionMap.set(email, "pending");
+          this.sessionMap.set(email, 'pending');
 
-          const resp = await this._post("sendMessage", {
+          const resp = await this._post('sendMessage', {
             chat_id: this.chatId,
             text: truncated,
-            parse_mode: "HTML",
+            parse_mode: 'HTML',
           });
 
           if (resp?.data?.result?.message_id) {
@@ -134,10 +131,10 @@ class RemoteLogger {
       } catch (err) {
         // Edit gagal (message dihapus manual atau messageId="pending") — reset dan kirim baru
         this.sessionMap.delete(email);
-        const resp = await this._post("sendMessage", {
+        const resp = await this._post('sendMessage', {
           chat_id: this.chatId,
           text: truncated,
-          parse_mode: "HTML",
+          parse_mode: 'HTML',
         });
         if (resp?.data?.result?.message_id) {
           this.sessionMap.set(email, resp.data.result.message_id);
@@ -153,21 +150,17 @@ class RemoteLogger {
     const progress = Math.min(Math.max(current / total, 0), 1);
     const filled = Math.round(size * progress);
     const empty = size - filled;
-    const bar = "█".repeat(filled) + "░".repeat(empty);
+    const bar = '█'.repeat(filled) + '░'.repeat(empty);
     return `<code>[${bar}] ${Math.round(progress * 100)}%</code>`;
   }
 
   escapeHTML(text) {
-    if (!text) return "";
-    return text
-      .toString()
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    if (!text) return '';
+    return text.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   async logStep(email, stepNum, msg) {
-    const user = email ? email.split("@")[0] : "unknown";
+    const user = email ? email.split('@')[0] : 'unknown';
     const identifier = `🚀 <b>Processing:</b> <code>${this.escapeHTML(user)}</code>`;
 
     console.log(`[${user}] [STEP ${stepNum}] ${msg}`);
@@ -180,8 +173,8 @@ class RemoteLogger {
     await this._sendOrEdit(email, text, false);
   }
 
-  async logError(email, msg, details = "") {
-    const user = email ? email.split("@")[0] : "unknown";
+  async logError(email, msg, details = '') {
+    const user = email ? email.split('@')[0] : 'unknown';
     const identifier = `❌ <b>Failed:</b> <code>${this.escapeHTML(user)}</code>`;
 
     console.error(`[${user}] [ERROR] ${msg} ${details}`);
@@ -195,8 +188,8 @@ class RemoteLogger {
     await this._sendOrEdit(email, formattedMsg, true);
   }
 
-  async logSuccess(email, msg, details = "") {
-    const user = email ? email.split("@")[0] : "unknown";
+  async logSuccess(email, msg, details = '') {
+    const user = email ? email.split('@')[0] : 'unknown';
     const identifier = `✅ <b>Success:</b> <code>${this.escapeHTML(user)}</code>`;
 
     console.log(`[${user}] [SUCCESS] ${msg}`);
@@ -210,13 +203,13 @@ class RemoteLogger {
     await this._sendOrEdit(email, text, true);
   }
 
-  async reportSystemStatus(prefix = "") {
+  async reportSystemStatus(prefix = '') {
     const memory = process.memoryUsage();
     const freeMem = os.freemem() / (1024 * 1024 * 1024);
     const totalMem = os.totalmem() / (1024 * 1024 * 1024);
-    const isWindows = os.platform() === "win32";
+    const isWindows = os.platform() === 'win32';
 
-    let cpuLine = "";
+    let cpuLine = '';
     if (isWindows) {
       cpuLine = `- CPU Cores: <code>${os.cpus().length} cores</code>`;
     } else {
@@ -233,8 +226,8 @@ class RemoteLogger {
       - Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>
       - Heap Used: <code>${(memory.heapUsed / (1024 * 1024)).toFixed(2)} MB</code>`;
 
-    console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, "")}`);
-    await this.send(status, "HTML");
+    console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, '')}`);
+    await this.send(status, 'HTML');
   }
 }
 

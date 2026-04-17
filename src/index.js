@@ -1,14 +1,14 @@
-const adsPowerHelper = require("./adspower_helper");
-const MicrosoftBot = require("./microsoft_bot");
-const { SuccessAccount } = require("./models");
-const remoteLogger = require("./remote_logger");
+const adsPowerHelper = require('./utils/adspower_helper');
+const MicrosoftBot = require('./bots/microsoft_bot');
+const { SuccessAccount } = require('./db/models');
+const remoteLogger = require('./utils/logger');
 
 async function saveToDB(result, telegram_id) {
-  if (result.status !== "SUCCESS") return;
+  if (result.status !== 'SUCCESS') return;
   try {
     const successAcc = new SuccessAccount({
-      email: result.email || "unknown",
-      password: result.domainPassword || result.password || "unknown",
+      email: result.email || 'unknown',
+      password: result.domainPassword || result.password || 'unknown',
       domainEmail: result.domainEmail,
       domainPassword: result.domainPassword,
       telegram_id: telegram_id.toString(),
@@ -22,7 +22,7 @@ async function saveToDB(result, telegram_id) {
 
 async function processSingleAccount(accountConfig, index, total, onPaymentSaved) {
   console.log(
-    `\n--- Starting Account ${index + 1} of ${total}: ${accountConfig.microsoftAccount.email} ---`,
+    `\n--- Starting Account ${index + 1} of ${total}: ${accountConfig.microsoftAccount.email} ---`
   );
 
   let currentProfileId = null;
@@ -32,12 +32,15 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
 
   try {
     console.log(`[Account ${index + 1}] Creating AdsPower profile...`);
-    const proxyOverride = (accountConfig.proxyUsername && accountConfig.proxyPassword) ? {
-      username: accountConfig.proxyUsername,
-      password: accountConfig.proxyPassword
-    } : null;
+    const proxyOverride =
+      accountConfig.proxyUsername && accountConfig.proxyPassword
+        ? {
+            username: accountConfig.proxyUsername,
+            password: accountConfig.proxyPassword,
+          }
+        : null;
 
-    currentProfileId = await adsPowerHelper.createProfile("", proxyOverride);
+    currentProfileId = await adsPowerHelper.createProfile('', proxyOverride);
     console.log(`[Account ${index + 1}] Created profile: ${currentProfileId}`);
 
     console.log(`[Account ${index + 1}] Starting browser...`);
@@ -60,40 +63,52 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
 
     if (result && result.success) {
       console.log(
-        `[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail}`,
+        `[Account ${index + 1}] Automation finished successfully. Domain: ${result.domainEmail}`
       );
       executionResult = {
-        status: "SUCCESS",
+        status: 'SUCCESS',
         domainEmail: result.domainEmail,
         domainPassword: accountConfig.microsoftAccount.password,
-        log: "Completed successfully",
+        log: 'Completed successfully',
       };
 
       const successDetails = `📧 <b>Login:</b> <code>${executionResult.domainEmail}</code>\n🔑 <b>Pass:</b> <code>${executionResult.domainPassword}</code>`;
-      await remoteLogger.logSuccess(accountConfig.microsoftAccount.email, "Berhasil membuat akun Microsoft!", successDetails);
+      await remoteLogger.logSuccess(
+        accountConfig.microsoftAccount.email,
+        'Berhasil membuat akun Microsoft!',
+        successDetails
+      );
     } else {
       console.error(
-        `[Account ${index + 1}] Automation failed: ${result?.error || "Unknown error"}`,
+        `[Account ${index + 1}] Automation failed: ${result?.error || 'Unknown error'}`
       );
       executionResult = {
-        status: "FAILED",
-        domainEmail: "",
-        domainPassword: "",
-        log: result?.error || "Unknown automation error",
+        status: 'FAILED',
+        domainEmail: '',
+        domainPassword: '',
+        log: result?.error || 'Unknown automation error',
       };
-      await remoteLogger.logError(accountConfig.microsoftAccount.email, "Proses otomatisasi gagal", executionResult.log);
+      await remoteLogger.logError(
+        accountConfig.microsoftAccount.email,
+        'Proses otomatisasi gagal',
+        executionResult.log
+      );
     }
   } catch (err) {
     console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
     executionResult = {
-      status: "FAILED",
-      domainEmail: "",
-      domainPassword: "",
+      status: 'FAILED',
+      domainEmail: '',
+      domainPassword: '',
       log: err.message,
     };
-    await remoteLogger.logError(accountConfig.microsoftAccount.email, "Terjadi kesalahan fatal", err.message);
+    await remoteLogger.logError(
+      accountConfig.microsoftAccount.email,
+      'Terjadi kesalahan fatal',
+      err.message
+    );
   } finally {
-    if (executionResult && executionResult.status !== "SUCCESS") {
+    if (executionResult && executionResult.status !== 'SUCCESS') {
       console.log(`[Account ${index + 1}] Waiting 5s before cleanup...`);
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
@@ -128,14 +143,14 @@ async function processSingleAccount(accountConfig, index, total, onPaymentSaved)
 
     if (!executionResult) {
       executionResult = {
-        status: "FAILED",
-        domainEmail: "",
-        domainPassword: "",
-        log: "Incomplete execution",
+        status: 'FAILED',
+        domainEmail: '',
+        domainPassword: '',
+        log: 'Incomplete execution',
       };
     }
 
-    if (executionResult.status === "SUCCESS") {
+    if (executionResult.status === 'SUCCESS') {
       executionResult.email = accountConfig.microsoftAccount.email;
       await saveToDB(executionResult, accountConfig.telegram_id);
     }
