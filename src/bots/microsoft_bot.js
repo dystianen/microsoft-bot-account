@@ -520,27 +520,28 @@ class MicrosoftBot {
       const count = await cards.count();
       let targetCard = null;
 
-      // Greedily search for title in cards
+      // 1. Prioritas cari card berdasarkan Judul (oc-product-title) agar lebih presisi
       for (let i = 0; i < count; i++) {
         const card = cards.nth(i);
+        const title = await card.locator('.oc-product-title').first().textContent().catch(() => '');
 
-        // Tunggu sebentar agar teks dalam card ter-render (untuk menghindari title kosong)
-        const text = await card.innerText().catch(() => '');
-
-        // Cek apakah target plan ada di judul spesifik atau di seluruh teks card (lebih aman)
-        const title = await card
-          .locator('.oc-product-title')
-          .first()
-          .textContent()
-          .catch(() => '');
-
-        if (
-          title.toUpperCase().includes(targetPlan.toUpperCase()) ||
-          text.toUpperCase().includes(targetPlan.toUpperCase())
-        ) {
-          console.log(`[INFO] Matching card found for ${targetPlan} at index ${i}`);
+        if (title.toUpperCase().includes(targetPlan.toUpperCase())) {
+          console.log(`[INFO] Exact plan title match found for ${targetPlan} at card index ${i}`);
           targetCard = card;
           break;
+        }
+      }
+
+      // 2. Fallback: cari di seluruh text card jika judul tidak ketemu
+      if (!targetCard) {
+        for (let i = 0; i < count; i++) {
+          const card = cards.nth(i);
+          const text = await card.innerText().catch(() => '');
+          if (text.toUpperCase().includes(targetPlan.toUpperCase())) {
+            console.log(`[INFO] Partial card text match found for ${targetPlan} at card index ${i}`);
+            targetCard = card;
+            break;
+          }
         }
       }
 
@@ -873,22 +874,44 @@ class MicrosoftBot {
     await this.humanPaste(cityLocator, this.accountConfig.microsoftAccount.city);
     await this.page.waitForTimeout(200);
 
-    const regionInput = this.page.locator('input[id*="region" i], input[id*="state" i]').first();
+    // Step 8.1: Handle State/Province/Region (Prioritaskan State agar tidak nyangkut di Country/Region)
+    const stateValue = this.accountConfig.microsoftAccount.state;
+    if (stateValue) {
+      // 1. Coba cari input/dropdown state dulu
+      const stateKeywords = ['state', 'province', 'provinsi', 'negara bagian'];
+      const regionKeywords = ['region', 'wilayah', 'daerah'];
 
-    // Pakai timeout pendek (5s) — hanya untuk cek apakah input atau dropdown
-    const regionIsInput = await regionInput
-      .waitFor({ state: 'visible', timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
+      let regionElement = null;
+      let isDropdown = false;
 
-    if (regionIsInput) {
-      await this.humanPaste(regionInput, this.accountConfig.microsoftAccount.state);
-      console.log('Region filled as input');
-    } else {
-      await this.selectDropdownByText(
-        'div[role="combobox"][id*="region" i], div[role="combobox"][id*="state" i], select[id*="region" i], select[id*="state" i]',
-        this.accountConfig.microsoftAccount.state
-      );
+      // Coba cari locator STATE dulu
+      for (const kw of [...stateKeywords, ...regionKeywords]) {
+        // Cek apakah ada dropdown/combobox dengan keyword ini
+        const combo = this.page.locator(`div[role="combobox"][id*="${kw}" i], select[id*="${kw}" i]`).first();
+        if (await combo.isVisible().catch(() => false)) {
+          regionElement = combo;
+          isDropdown = true;
+          break;
+        }
+        // Cek apakah ada input text
+        const inp = this.page.locator(`input[id*="${kw}" i], input[name*="${kw}" i]`).first();
+        if (await inp.isVisible().catch(() => false)) {
+          regionElement = inp;
+          isDropdown = false;
+          break;
+        }
+      }
+
+      if (regionElement) {
+        if (isDropdown) {
+          await this.selectDropdownByText(regionElement, stateValue);
+        } else {
+          await this.humanPaste(regionElement, stateValue);
+        }
+        console.log(`[STEP 8] Region/State filled: ${stateValue}`);
+      } else {
+        console.warn('[STEP 8] Could not find State/Region field.');
+      }
     }
 
     await this.humanDelay(613);
@@ -1532,8 +1555,8 @@ class MicrosoftBot {
     const trialKeywords = [
       'start trial',
       'mulai uji coba',
-      'commencer l\'essai',
-      'essayer l\'essai',
+      "commencer l'essai",
+      "essayer l'essai",
       'try now',
       'coba sekarang',
       'essayer maintenant',
