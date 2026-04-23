@@ -288,10 +288,13 @@ class MicrosoftBot {
 
   getGenericLocator(keywords, elementType = 'input') {
     const kws = Array.isArray(keywords) ? keywords : [keywords];
-    const selectors = kws.map(keyword => 
-      `${elementType}[id*="${keyword}" i], ${elementType}[data-testid*="${keyword}" i], ${elementType}[data-bi-id*="${keyword}" i], ${elementType}[name*="${keyword}" i], ${elementType}[aria-label*="${keyword}" i]`
-    ).join(', ');
-    
+    const selectors = kws
+      .map(
+        (keyword) =>
+          `${elementType}[id*="${keyword}" i], ${elementType}[data-testid*="${keyword}" i], ${elementType}[data-bi-id*="${keyword}" i], ${elementType}[name*="${keyword}" i], ${elementType}[aria-label*="${keyword}" i]`
+      )
+      .join(', ');
+
     return this.page.locator(selectors).first();
   }
 
@@ -524,7 +527,11 @@ class MicrosoftBot {
       // 1. Prioritas cari card berdasarkan Judul (oc-product-title) agar lebih presisi
       for (let i = 0; i < count; i++) {
         const card = cards.nth(i);
-        const title = await card.locator('.oc-product-title').first().textContent().catch(() => '');
+        const title = await card
+          .locator('.oc-product-title')
+          .first()
+          .textContent()
+          .catch(() => '');
 
         if (title.toUpperCase().includes(targetPlan.toUpperCase())) {
           console.log(`[INFO] Exact plan title match found for ${targetPlan} at card index ${i}`);
@@ -539,7 +546,9 @@ class MicrosoftBot {
           const card = cards.nth(i);
           const text = await card.innerText().catch(() => '');
           if (text.toUpperCase().includes(targetPlan.toUpperCase())) {
-            console.log(`[INFO] Partial card text match found for ${targetPlan} at card index ${i}`);
+            console.log(
+              `[INFO] Partial card text match found for ${targetPlan} at card index ${i}`
+            );
             targetCard = card;
             break;
           }
@@ -823,11 +832,13 @@ class MicrosoftBot {
 
   async handleCookiePopup() {
     try {
-      const closeBtn = this.page.locator('div[role="dialog"] button[aria-label="Fermer"], button:has-text("✕")').first();
+      const closeBtn = this.page
+        .locator('div[role="dialog"] button[aria-label="Fermer"], button:has-text("✕")')
+        .first();
       if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
         console.log('[COOKIE] Cookie popup detected (France), closing...');
         await closeBtn.click().catch(() => {});
-        await this.page.waitForTimeout(1000);
+        await this.page.waitForTimeout(10000);
       }
     } catch (e) {
       // Ignore errors during optional cleanup
@@ -836,16 +847,14 @@ class MicrosoftBot {
 
   async fillBasicInfo() {
     await this._logStep(8, 'Mengisi informasi dasar akun...');
-
     await this.waitWithCheck(this.getGenericLocator(['first', 'prénom', 'prenom']), HARD_TIMEOUT);
 
-    // Row 1: First name — pakai paste agar tidak kena proxy lag
+    // === NAME ===
     const firstLocator = this.getGenericLocator(['first', 'prénom', 'prenom']);
     await this.waitForVisible(firstLocator);
     await this.humanPaste(firstLocator, this.accountConfig.microsoftAccount.firstName);
     await this.page.waitForTimeout(200);
 
-    // Middle name (Optional)
     if (this.accountConfig.microsoftAccount.middleName) {
       const middleLocator = this.getGenericLocator(['middle', 'deuxième']);
       if (await middleLocator.isVisible().catch(() => false)) {
@@ -854,19 +863,17 @@ class MicrosoftBot {
       }
     }
 
-    // Last name
     const lastLocator = this.getGenericLocator(['last', 'nom', 'famille']);
     await this.waitForVisible(lastLocator);
     await this.humanPaste(lastLocator, this.accountConfig.microsoftAccount.lastName);
     await this.page.waitForTimeout(200);
 
-    // Company
+    // === COMPANY ===
     const companyLocator = this.getGenericLocator(['company', 'entreprise', 'société']);
     await this.waitForVisible(companyLocator);
     await this.humanPaste(companyLocator, this.accountConfig.microsoftAccount.companyName);
     await this.page.waitForTimeout(200);
 
-    // Company size
     await this.humanScroll();
     await this.selectDropdownByText(
       'div[role="combobox"][id*="size" i], div[role="combobox"][data-testid*="size" i], select[id*="size" i]',
@@ -874,107 +881,21 @@ class MicrosoftBot {
     );
     await this.humanDelay(600, 1000);
 
-    // Phone — pakai paste
+    // === CONTACT ===
     const phoneLocator = this.getGenericLocator(['phone', 'téléphone', 'numéro']);
     await this.waitForVisible(phoneLocator);
     await this.humanPaste(phoneLocator, this.accountConfig.microsoftAccount.phone);
     await this.page.waitForTimeout(200);
 
-    // Job — pakai paste
     const jobLocator = this.getGenericLocator(['job', 'poste', 'fonction']);
     await this.waitForVisible(jobLocator);
     await this.humanPaste(jobLocator, this.accountConfig.microsoftAccount.jobTitle);
     await this.page.waitForTimeout(300);
 
-    // Address 1 — pakai paste
-    const addressLocator = this.getGenericLocator(['address', 'ligne', 'adresse']);
-    await this.waitForVisible(addressLocator);
-    await this.humanPaste(addressLocator, this.accountConfig.microsoftAccount.address);
-    await this.page.waitForTimeout(200);
+    // === ADDRESS: isi sesuai urutan DOM aktual ===
+    await this._fillAddressInDomOrder();
 
-    // Address 2 (Optional)
-    if (this.accountConfig.microsoftAccount.address2) {
-      const address2Locator = this.page.locator('input[id*="address_line2" i], input[name*="address_line2" i]').first();
-      if (await address2Locator.isVisible().catch(() => false)) {
-        await this.humanPaste(address2Locator, this.accountConfig.microsoftAccount.address2);
-        await this.page.waitForTimeout(200);
-      }
-    }
-
-    // City — pakai paste
-    const cityLocator = this.getGenericLocator(['city', 'ville']);
-    await this.waitForVisible(cityLocator);
-    await this.humanPaste(cityLocator, this.accountConfig.microsoftAccount.city);
-    await this.page.waitForTimeout(200);
-
-    // Step 8.1: Handle State/Province/Region
-    const stateValue = this.accountConfig.microsoftAccount.state;
-    if (stateValue) {
-      const stateKeywords = ['state', 'province', 'provinsi', 'negara bagian'];
-      const regionKeywords = ['region', 'wilayah', 'daerah', 'département', 'departement'];
-
-      let regionElement = null;
-      let isDropdown = false;
-
-      // Coba cari locator STATE dulu
-      for (const kw of [...stateKeywords, ...regionKeywords]) {
-        // Cek apakah ada dropdown/combobox dengan keyword ini
-        const combo = this.page.locator(`div[role="combobox"][id*="${kw}" i], select[id*="${kw}" i]`).first();
-        if (await combo.isVisible().catch(() => false)) {
-          regionElement = combo;
-          isDropdown = true;
-          break;
-        }
-        // Cek apakah ada input text
-        const inp = this.page.locator(`input[id*="${kw}" i], input[name*="${kw}" i]`).first();
-        if (await inp.isVisible().catch(() => false)) {
-          regionElement = inp;
-          isDropdown = false;
-          break;
-        }
-      }
-
-      if (regionElement) {
-        if (isDropdown) {
-          await this.selectDropdownByText(regionElement, stateValue);
-        } else {
-          await this.humanPaste(regionElement, stateValue);
-        }
-        console.log(`[STEP 8] Region/State filled: ${stateValue}`);
-      } else {
-        console.warn('[STEP 8] Could not find State/Region field.');
-      }
-    }
-
-    await this.humanDelay(613);
-
-    // 🔥 POSTAL — pakai paste
-    const zipLocator = this.page
-      .locator(
-        'input[id*="postal" i], input[id*="zip" i], input[data-testid*="postal" i], input[data-testid*="zip" i]'
-      )
-      .first();
-
-    if (this.accountConfig.microsoftAccount.postalCode && (await zipLocator.count()) > 0) {
-      try {
-        await this.humanPaste(zipLocator, this.accountConfig.microsoftAccount.postalCode);
-        console.log('Postal filled');
-        await this.page.waitForTimeout(400);
-      } catch {
-        console.log('Postal found but failed to fill');
-      }
-    } else {
-      console.log('Postal not found / not provided');
-    }
-
-    // Country
-    // await this.selectDropdownByText(
-    //   'div[role="combobox"][id*="country" i], select[id*="country" i]',
-    //   this.accountConfig.microsoftAccount.country || "United States",
-    // ).catch(() => { });
-    // await this.humanDelay(800, 1500);
-
-    // Website (jangan pakai "Select one")
+    // === WEBSITE DROPDOWN ===
     await this.humanDelay(914);
     await this.humanScroll();
     await this.selectDropdownByText(
@@ -983,7 +904,7 @@ class MicrosoftBot {
     );
     await this.humanDelay(800, 1500);
 
-    // Checkbox (Consent/Partner)
+    // === CHECKBOXES ===
     try {
       const checkboxSelectors = [
         '#partner-checkbox',
@@ -991,23 +912,23 @@ class MicrosoftBot {
         'input[type="checkbox"][aria-label*="share my information" i]',
         'input[type="checkbox"][aria-label*="partage mes informations" i]',
         'input[type="checkbox"][aria-label*="receive information" i]',
-        'input[type="checkbox"][aria-label*="recevoir des informations" i]'
+        'input[type="checkbox"][aria-label*="recevoir des informations" i]',
       ];
-
       for (const selector of checkboxSelectors) {
         const cb = this.page.locator(selector).first();
         if (await cb.isVisible().catch(() => false)) {
           if (!(await cb.isChecked())) {
             await this.randomMouseMove();
             await cb.check({ force: true });
-            console.log(`Checkbox checked: ${selector}`);
+            console.log(`[STEP 8] Checkbox checked: ${selector}`);
           }
         }
       }
     } catch (err) {
-      console.log('Checkbox error:', err.message);
+      console.log('[STEP 8] Checkbox error:', err.message);
     }
 
+    // === SUBMIT ===
     await this.humanDelay(600, 1200);
     await this.randomMouseMove();
     if (Math.random() > 0.5) await this.humanScroll();
@@ -1022,6 +943,140 @@ class MicrosoftBot {
       'Suivant',
       'Continuer',
     ]);
+  }
+
+  // Mengisi address fields SESUAI urutan kemunculan di DOM
+  async _fillAddressInDomOrder() {
+    const cfg = this.accountConfig.microsoftAccount;
+
+    // Definisi semua field address yang mungkin muncul
+    // "detect" mengembalikan { el, type } jika field ditemukan & visible
+    const fieldDefs = [
+      {
+        name: 'address_line1',
+        detect: async () => {
+          const el = this.page
+            .locator(
+              'input[id="address_line1"], input[name="address_line1"], input[id*="address_line1" i]'
+            )
+            .first();
+          return (await el.isVisible().catch(() => false)) ? { el, type: 'input' } : null;
+        },
+        value: () => cfg.address,
+      },
+      {
+        name: 'address_line2',
+        detect: async () => {
+          if (!cfg.address2) return null;
+          const el = this.page
+            .locator(
+              'input[id="address_line2"], input[name="address_line2"], input[id*="address_line2" i]'
+            )
+            .first();
+          return (await el.isVisible().catch(() => false)) ? { el, type: 'input' } : null;
+        },
+        value: () => cfg.address2,
+      },
+      {
+        name: 'postal',
+        detect: async () => {
+          const el = this.page
+            .locator(
+              'input[id="postal_code"], input[id*="postal" i], input[id*="zip" i], input[data-testid*="postal" i]'
+            )
+            .first();
+          return (await el.isVisible().catch(() => false)) ? { el, type: 'input' } : null;
+        },
+        value: () => cfg.postalCode,
+      },
+      {
+        name: 'region',
+        detect: async () => {
+          if (!cfg.state) return null;
+          const dropdownCandidates = [
+            'div[role="combobox"][id="input_region"]',
+            'div[role="combobox"][id="input_state"]',
+            'div[role="combobox"][id="input_province"]',
+            'div[role="combobox"][id*="state" i]',
+            'div[role="combobox"][id*="province" i]',
+            'div[role="combobox"][id*="region" i]',
+            'div[role="combobox"][id*="département" i]',
+            'select[id="input_region"]',
+            'select[id*="state" i]',
+            'select[id*="province" i]',
+            'select[id*="region" i]',
+          ];
+          for (const sel of dropdownCandidates) {
+            const el = this.page.locator(sel).first();
+            if (await el.isVisible().catch(() => false)) {
+              return { el, type: 'dropdown', sel };
+            }
+          }
+          // Input text fallback
+          const inputCandidates = [
+            'input[id*="state" i]',
+            'input[id*="province" i]',
+            'input[id*="region" i]',
+            'input[name*="state" i]',
+          ];
+          for (const sel of inputCandidates) {
+            const el = this.page.locator(sel).first();
+            if (await el.isVisible().catch(() => false)) {
+              return { el, type: 'input' };
+            }
+          }
+          return null;
+        },
+        value: () => cfg.state,
+      },
+      {
+        name: 'city',
+        detect: async () => {
+          const el = this.page
+            .locator(
+              'input[id="city"], input[name="city"], input[id*="city" i], input[id*="ville" i]'
+            )
+            .first();
+          return (await el.isVisible().catch(() => false)) ? { el, type: 'input' } : null;
+        },
+        value: () => cfg.city,
+      },
+    ];
+
+    // Deteksi posisi DOM setiap field, lalu sort berdasarkan posisi Y
+    const detected = [];
+    for (const def of fieldDefs) {
+      const result = await def.detect();
+      if (!result) {
+        console.log(`[STEP 8] Field "${def.name}" not found / skipped`);
+        continue;
+      }
+      // Ambil posisi Y di DOM untuk sorting
+      const boundingBox = await result.el.boundingBox().catch(() => null);
+      const yPos = boundingBox ? boundingBox.y : 9999;
+      detected.push({ ...def, result, yPos });
+    }
+
+    // Sort berdasarkan posisi Y (urutan DOM aktual di layar)
+    detected.sort((a, b) => a.yPos - b.yPos);
+    console.log(`[STEP 8] Address fill order: ${detected.map((d) => d.name).join(' → ')}`);
+
+    // Isi satu per satu sesuai urutan DOM
+    for (const field of detected) {
+      const val = field.value();
+      if (!val) continue;
+
+      if (field.result.type === 'dropdown') {
+        await this.selectDropdownByText(field.result.sel, val);
+        // Setelah dropdown berubah, tunggu DOM stabil (city/postal bisa berubah)
+        await this.page.waitForTimeout(500);
+      } else {
+        await this.humanPaste(field.result.el, val);
+        await this.page.waitForTimeout(200);
+      }
+
+      console.log(`[STEP 8] Filled "${field.name}": ${val}`);
+    }
   }
 
   async confirmAddressIfPrompted(step = 10, msg = 'Mengecek konfirmasi alamat...') {
