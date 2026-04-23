@@ -227,7 +227,7 @@ class MicrosoftBot {
       ({ keywords, excludeLower }) => {
         const candidates = [
           ...document.querySelectorAll(
-            'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]'
+            'button, [role="button"], a, input[type="button"], input[type="submit"], [class*="ms-Button"], [class*="btn"]'
           ),
         ];
 
@@ -940,9 +940,11 @@ class MicrosoftBot {
   }
 
   async handleCookiePopup() {
-    const MAX_WAIT_MS = 8000;
+    const MAX_WAIT_MS = 3000; // Dikurangi agar tidak kelamaan kalau memang tidak ada
     const CHECK_INTERVAL = 500;
     const elapsed = { val: 0 };
+    
+    console.log('[COOKIE] Checking for cookie popup...');
 
     // Poll sampai popup muncul atau timeout
     let dialogVisible = false;
