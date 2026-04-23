@@ -772,21 +772,15 @@ class MicrosoftBot {
       .first();
 
     // Deteksi halaman OTP/Verifikasi
+    // Deteksi halaman OTP/Verifikasi - Gunakan .or() agar tidak terjadi SyntaxError pada text=/regex/
     const otpPage = this.page
-      .locator(
-        [
-          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i',
-          'input[aria-label*="code" i]',
-          'input[id*="code" i]',
-          'input[name*="code" i]',
-          'input[placeholder*="code" i]',
-          'button:has-text("Verifikasi")',
-          'button:has-text("Verify")',
-          'button:has-text("Vérifier")',
-          'button[data-bi-id="VerifyCode"]',
-          '[id*="VerifyCode"]',
-          'label:has-text("Code de vérification")',
-        ].join(', ')
+      .locator('button[data-bi-id="VerifyCode"]')
+      .or(this.page.locator('button:has-text("Verifikasi"), button:has-text("Verify"), button:has-text("Vérifier")'))
+      .or(this.page.locator('label:has-text("Code de vérification"), label:has-text("Verification code"), label:has-text("Kode verifikasi")'))
+      .or(
+        this.page.locator(
+          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i'
+        )
       )
       .first();
 
