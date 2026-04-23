@@ -771,27 +771,6 @@ class MicrosoftBot {
       .locator('input[id*="first" i], input[id*="fname" i], input[id*="firstName" i]')
       .first();
 
-    // Deteksi halaman OTP/Verifikasi
-    // Deteksi halaman OTP/Verifikasi - Gunakan .or() agar tidak terjadi SyntaxError pada text=/regex/
-    const otpPage = this.page
-      .locator('button[data-bi-id="VerifyCode"]')
-      .or(
-        this.page.locator(
-          'button:has-text("Verifikasi"), button:has-text("Verify"), button:has-text("Vérifier")'
-        )
-      )
-      .or(
-        this.page.locator(
-          'label:has-text("Code de vérification"), label:has-text("Verification code"), label:has-text("Kode verifikasi")'
-        )
-      )
-      .or(
-        this.page.locator(
-          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i'
-        )
-      )
-      .first();
-
     console.log(
       `[INFO] Detecting page state... URL: ${this.page.url()} | Title: ${await this.page.title().catch(() => 'N/A')}`
     );
@@ -802,27 +781,16 @@ class MicrosoftBot {
 
     try {
       const winner = await this.runWithMonitor(
-        Promise.race([
-          basicInfoForm
-            .waitFor({ state: 'visible', timeout: HARD_TIMEOUT })
-            .then(() => 'basicinfo'),
-          otpPage.waitFor({ state: 'visible', timeout: HARD_TIMEOUT }).then(() => 'otp'),
-        ]),
-        HARD_TIMEOUT
-      ).catch((e) => {
-        console.warn(`[WARN] page state detection ended: ${e.message}`);
-        return null;
-      });
+        basicInfoForm
+          .waitFor({ state: 'visible', timeout: 15000 })
+          .then(() => 'basicinfo')
+          .catch(() => null),
+        15000
+      );
 
       if (winner === 'basicinfo') {
         console.log('[INFO] Basic info form visible — setup button step will be skipped.');
         this._setupBtnReady = false;
-      } else if (winner === 'otp') {
-        const msg = '[WARN] OTP Verification page detected! Attempting Mailporary reset...';
-        console.warn(msg);
-        await this._logStep(6, msg);
-        await this.handleOtpWithMailporary();
-        return;
       } else {
         // null = timeout — kemungkinan setup button perlu diklik, coba di step 7
         console.log(
@@ -934,6 +902,37 @@ class MicrosoftBot {
 
     if (!clicked) {
       console.warn('[STEP 7] Setup button not found — platform may have skipped it.');
+    }
+
+    await this.waitForSpinnerGone();
+    await this.page.waitForTimeout(1000);
+
+    // Cek apakah muncul OTP setelah klik Setup
+    const otpPage = this.page
+      .locator('button[data-bi-id="VerifyCode"]')
+      .or(
+        this.page.locator(
+          'button:has-text("Verifikasi"), button:has-text("Verify"), button:has-text("Vérifier")'
+        )
+      )
+      .or(
+        this.page.locator(
+          'label:has-text("Code de vérification"), label:has-text("Verification code"), label:has-text("Kode verifikasi")'
+        )
+      )
+      .or(
+        this.page.locator(
+          'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i'
+        )
+      )
+      .first();
+
+    if (await otpPage.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const msg = '[WARN] OTP Verification page detected AFTER Setup Click! Resetting...';
+      console.warn(msg);
+      await this._logStep(7, msg);
+      await this.handleOtpWithMailporary();
+      return;
     }
 
     this._setupBtnReady = false;
