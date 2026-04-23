@@ -832,16 +832,52 @@ class MicrosoftBot {
 
   async handleCookiePopup() {
     try {
-      const closeBtn = this.page
-        .locator('div[role="dialog"] button[aria-label="Fermer"], button:has-text("✕")')
-        .first();
-      if (await closeBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
-        console.log('[COOKIE] Cookie popup detected (France), closing...');
-        await closeBtn.click().catch(() => {});
-        await this.page.waitForTimeout(1000);
+      // Tunggu dialog muncul dulu, tapi jangan terlalu lama
+      const dialog = this.page.locator('div[role="dialog"][aria-label*="cookie" i]').first();
+      const isVisible = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+
+      if (!isVisible) {
+        console.log('[COOKIE] No cookie popup detected.');
+        return;
       }
+
+      console.log('[COOKIE] Cookie popup detected, closing...');
+
+      // Coba berbagai cara tutup popup, urutan dari paling spesifik
+      const closeStrategies = [
+        // Strategy 1: aria-label="Fermer" di dalam dialog
+        () => dialog.locator('button[aria-label="Fermer"]').first(),
+        // Strategy 2: aria-label="Fermer" anywhere
+        () => this.page.locator('button[aria-label="Fermer"]').first(),
+        // Strategy 3: button yang isinya ✕ (pakai Playwright filter)
+        () => this.page.locator('button').filter({ hasText: '✕' }).first(),
+        // Strategy 4: button yang isinya × (karakter berbeda)
+        () => this.page.locator('button').filter({ hasText: '×' }).first(),
+        // Strategy 5: Close button generic
+        () =>
+          this.page
+            .locator(
+              'button[aria-label*="close" i], button[aria-label*="fermer" i], button[aria-label*="tutup" i]'
+            )
+            .first(),
+      ];
+
+      for (const getLocator of closeStrategies) {
+        const btn = getLocator();
+        if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await btn.click({ force: true });
+          console.log('[COOKIE] Cookie popup closed.');
+          await this.page.waitForTimeout(800);
+          return;
+        }
+      }
+
+      // Fallback: tekan Escape
+      console.warn('[COOKIE] Close button not found, trying Escape key...');
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(500);
     } catch (e) {
-      // Ignore errors during optional cleanup
+      console.warn('[COOKIE] handleCookiePopup error:', e.message);
     }
   }
 
