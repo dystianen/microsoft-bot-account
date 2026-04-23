@@ -810,10 +810,11 @@ class MicrosoftBot {
         console.log('[INFO] Basic info form visible — setup button step will be skipped.');
         this._setupBtnReady = false;
       } else if (winner === 'otp') {
-        console.error('[ERROR] OTP Verification page detected!');
-        throw new Error(
-          'OTP_VERIFICATION_REQUIRED: Halaman verifikasi kode muncul. Tidak bisa lanjut otomatis.'
-        );
+        const msg = '[WARN] OTP Verification page detected! Attempting Mailporary reset...';
+        console.warn(msg);
+        await remoteLogger.log(this.accountConfig.id, 'OTP_DETECTED', msg);
+        await this.handleOtpWithMailporary();
+        return;
       } else {
         // null = timeout — kemungkinan setup button perlu diklik, coba di step 7
         console.log(
@@ -824,6 +825,48 @@ class MicrosoftBot {
     } finally {
       clearInterval(interval);
     }
+  }
+
+  async handleOtpWithMailporary() {
+    await remoteLogger.log(this.accountConfig.id, 'MAILPORARY_START', 'Opening Mailporary to get new email...');
+    console.log('[OTP] Opening Mailporary to get new email...');
+
+    // 1. Buka tab mailporary
+    const mailporaryPage = await this.page.context().newPage();
+    try {
+      await mailporaryPage.goto('https://mailporary.com/', {
+        waitUntil: 'networkidle',
+        timeout: HARD_TIMEOUT,
+      });
+
+      // 2. Tunggu input email muncul dan ambil nilainya
+      const emailInput = mailporaryPage.locator('input[aria-label="Email Address"]');
+      await emailInput.waitFor({ state: 'visible', timeout: HARD_TIMEOUT });
+
+      const newEmail = await emailInput.getAttribute('value');
+
+      if (!newEmail || !newEmail.includes('@')) {
+        throw new Error('Failed to extract valid email from Mailporary');
+      }
+
+      console.log(`[OTP] Copied new email: ${newEmail}`);
+      await remoteLogger.log(this.accountConfig.id, 'MAILPORARY_SUCCESS', `Copied new email: ${newEmail}`);
+
+      // Update config agar proses selanjutnya pakai email ini
+      this.accountConfig.microsoftAccount.email = newEmail;
+    } finally {
+      // 3. Close tab mailporary
+      await mailporaryPage.close().catch(() => {});
+    }
+
+    // 4. Refresh page Microsoft asli
+    const refreshMsg = '[OTP] Refreshing Microsoft page and restarting flow...';
+    console.log(refreshMsg);
+    await remoteLogger.log(this.accountConfig.id, 'OTP_RESTART_FLOW', refreshMsg);
+    await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
+
+    // 5. Balik lagi ke action clickProductNextButton
+    await this.clickProductNextButton();
   }
 
   async clickSetupAccountButton() {
