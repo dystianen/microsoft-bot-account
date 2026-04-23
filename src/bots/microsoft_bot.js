@@ -907,8 +907,8 @@ class MicrosoftBot {
     await this.waitForSpinnerGone();
     await this.page.waitForTimeout(1000);
 
-    // Cek apakah muncul OTP setelah klik Setup
-    const otpPage = this.page
+    // Cek apakah muncul OTP atau Error "Too many requests" setelah klik Setup
+    const resetTrigger = this.page
       .locator('button[data-bi-id="VerifyCode"]')
       .or(
         this.page.locator(
@@ -925,10 +925,15 @@ class MicrosoftBot {
           'text=/Verification code|Enter the code|Kode verifikasi|Masukkan kode|Kami telah mengirim kode|Code de vérification|Entrez le code|Nous avons envoyé le code/i'
         )
       )
+      .or(
+        this.page.locator(
+          'text=/requêtes trop élevé|too many requests|reached the limit|jumlah permintaan terlalu tinggi/i'
+        )
+      )
       .first();
 
-    if (await otpPage.isVisible({ timeout: 5000 }).catch(() => false)) {
-      const msg = '[WARN] OTP Verification page detected AFTER Setup Click! Resetting...';
+    if (await resetTrigger.isVisible({ timeout: 10000 }).catch(() => false)) {
+      const msg = '[WARN] OTP or Rate-limit detected AFTER Setup Click! Resetting...';
       console.warn(msg);
       await this._logStep(7, msg);
       await this.handleOtpWithMailporary();
@@ -2018,7 +2023,18 @@ class MicrosoftBot {
         .first();
       if (await fieldError.isVisible().catch(() => false)) {
         const msg = (await fieldError.innerText().catch(() => '')).trim();
-        if (msg) return `Validation/UI Error: ${msg}`;
+        if (msg) {
+          // Jika error adalah "Too many requests", biarkan detector di step 7 yang menangani (reset Mailporary)
+          if (
+            /requêtes trop élevé|too many requests|reached the limit|jumlah permintaan terlalu tinggi/i.test(
+              msg
+            )
+          ) {
+            console.log(`[INFO] Ignoring rate-limit error in global monitor to allow reset logic.`);
+            return null;
+          }
+          return `Validation/UI Error: ${msg}`;
+        }
       }
 
       // 4. Cek teks di SEMUA frame (termasuk iframe tersembunyi)
@@ -2027,10 +2043,6 @@ class MicrosoftBot {
         'something happened',
         "there's a problem",
         'there was a problem',
-        'try again later',
-        'try again shortly',
-        "request can't be completed",
-        'request cannot be completed',
         'terjadi sesuatu',
         'Terjadi kesalahan',
         'Sesuatu telah terjadi',
@@ -2044,8 +2056,6 @@ class MicrosoftBot {
         'error code',
         'correlation id',
         '715-123280',
-        'reached the limit',
-        'too many times',
         "can't create your account",
         'cannot create your account',
         'identity could not be verified',
