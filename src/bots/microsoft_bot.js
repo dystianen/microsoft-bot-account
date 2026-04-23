@@ -835,10 +835,10 @@ class MicrosoftBot {
       const closeBtn = this.page
         .locator('div[role="dialog"] button[aria-label="Fermer"], button:has-text("✕")')
         .first();
-      if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      if (await closeBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
         console.log('[COOKIE] Cookie popup detected (France), closing...');
         await closeBtn.click().catch(() => {});
-        await this.page.waitForTimeout(10000);
+        await this.page.waitForTimeout(1000);
       }
     } catch (e) {
       // Ignore errors during optional cleanup
