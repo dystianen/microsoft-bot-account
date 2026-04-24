@@ -765,6 +765,37 @@ class MicrosoftBot {
     console.log('[INFO] Waiting for page to settle after email submit...');
     await this.waitForSpinnerGone(500);
 
+    // Deteksi apakah muncul Verifikasi Kode (OTP) mendadak setelah submit email
+    const otpTrigger = this.page
+      .locator('button[data-bi-id="VerifyCode"]')
+      .or(
+        this.page.locator(
+          'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
+        )
+      )
+      .first();
+
+    if (await otpTrigger.isVisible({ timeout: 3000 }).catch(() => false)) {
+      console.log('[OTP] Verification code appeared immediately after email submit!');
+      if (this._emailFromMailporary) {
+        // Jika sudah pakai Mailporary, langsung ambil kodenya
+        const code = await this.readOtpFromMailporary();
+        if (code) {
+          const solved = await this.fillMicrosoftOtp(code);
+          if (solved) {
+            console.log('[OTP] First-stage OTP solved successfully.');
+            await this.waitForSpinnerGone();
+          }
+        }
+      } else {
+        // Jika belum pakai Mailporary, ganti ke Mailporary dulu (instruksi USER)
+        console.log('[OTP] First-stage OTP detected on config email. Switching to Mailporary...');
+        await this.fetchNewEmailFromMailporary();
+        // Beri sinyal agar run() reload
+        throw new Error('MICROSOFT_ERROR: FIRST_STAGE_OTP_SWITCH');
+      }
+    }
+
     // Tunggu tombol Setup muncul sebagai konfirmasi transisi halaman
     const setupBtn = this.getGenericButton([
       'Set up account',
@@ -800,10 +831,10 @@ class MicrosoftBot {
    * Mengambil email baru dari Mailporary
    */
   async fetchNewEmailFromMailporary(forceNew = false) {
-    const logEmail = this.accountConfig.microsoftAccount.email || 'New Account';
+    const currentEmail = this.accountConfig.microsoftAccount.email || 'New Account';
     await this._logStep(
-      this._currentStepIndex || 0,
-      `📧 <b>${logEmail}</b>: Membuka Mailporary untuk email baru...`
+      this._currentStepIndex || 2,
+      `📧 <code>${currentEmail}</code>: Membuka Mailporary untuk email baru...`
     );
     console.log(`[MAILPORARY] Opening Mailporary (forceNew: ${forceNew})...`);
 
@@ -858,15 +889,14 @@ class MicrosoftBot {
       // Migrate log session agar Processing: [email] berubah tapi pesan tetap di-edit (bukan kirim baru)
       const oldEmail = this.accountConfig.microsoftAccount.email;
       if (oldEmail && oldEmail !== finalEmail) {
-        remoteLogger.migrateSession(oldEmail, finalEmail);
+        await remoteLogger.migrateSession(oldEmail, finalEmail);
       }
 
       this.accountConfig.microsoftAccount.email = finalEmail;
-      this.originalEmail = finalEmail; // Update originalEmail agar logKey selanjutnya pakai email baru
       this._emailFromMailporary = true; // Tandai bahwa email ini dari Mailporary
       await this._logStep(
-        this._currentStep || 6,
-        `📧 <b>${finalEmail}</b>: Email baru didapat: <code>${finalEmail}</code>`
+        this._currentStepIndex || 6,
+        `📧 <code>${finalEmail}</code>: Email baru didapat: <code>${finalEmail}</code>`
       );
       return finalEmail;
     } finally {
@@ -879,7 +909,7 @@ class MicrosoftBot {
    */
   async readOtpFromMailporary() {
     const logEmail = this.accountConfig.microsoftAccount.email || 'Account';
-    await this._logStep(7, `🔍 <b>${logEmail}</b>: Menunggu kode OTP di Mailporary...`);
+    await this._logStep(7, `🔍 <code>${logEmail}</code>: Menunggu kode OTP di Mailporary...`);
     console.log('[OTP] Waiting for verification code from Mailporary...');
 
     const mailporaryPage = await this.page.context().newPage();
@@ -1003,7 +1033,7 @@ class MicrosoftBot {
     // Refresh page Microsoft asli
     const refreshMsg = '[OTP] Refreshing Microsoft page for retry...';
     console.log(refreshMsg);
-    await this._logStep(this._currentStep || 7, `🔄 <b>${logEmail}</b>: ${refreshMsg}`);
+    await this._logStep(this._currentStepIndex || 8, `🔄 <code>${logEmail}</code>: ${refreshMsg}`);
     await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
 
     // Note: clickProductNextButton is now handled by the main run() loop retry logic
@@ -2409,7 +2439,7 @@ class MicrosoftBot {
             const warnMsg =
               '[CAPTCHA] Protecting your account detected. Switching to new Mailporary email...';
             console.warn(warnMsg);
-            await this._logStep(this.currentStep, warnMsg);
+            await this._logStep(this._currentStepIndex || 7, warnMsg);
             await this.fetchNewEmailFromMailporary();
             await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
             continue;

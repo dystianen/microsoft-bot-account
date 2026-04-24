@@ -150,14 +150,17 @@ class RemoteLogger {
    * Mengalihkan sesi pesan Telegram dari email lama ke email baru
    * agar pesan yang sama bisa di-update meskipun key-nya berubah.
    */
-  migrateSession(oldEmail, newEmail) {
+  async migrateSession(oldEmail, newEmail) {
     if (!oldEmail || !newEmail || oldEmail === newEmail) return;
-    const messageId = this.sessionMap.get(oldEmail);
-    if (messageId) {
-      this.sessionMap.set(newEmail, messageId);
-      this.sessionMap.delete(oldEmail);
-      console.log(`[RemoteLogger] Session migrated: ${oldEmail} -> ${newEmail}`);
-    }
+
+    await this._enqueue(async () => {
+      const messageId = this.sessionMap.get(oldEmail);
+      if (messageId) {
+        this.sessionMap.set(newEmail, messageId);
+        this.sessionMap.delete(oldEmail);
+        console.log(`[RemoteLogger] Session migrated in queue: ${oldEmail} -> ${newEmail}`);
+      }
+    });
   }
 
   getProgressBar(current, total = 18) {
