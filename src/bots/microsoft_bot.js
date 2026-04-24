@@ -771,6 +771,16 @@ class MicrosoftBot {
       .locator('input[id*="first" i], input[id*="fname" i], input[id*="firstName" i]')
       .first();
 
+    // Deteksi verifikasi pertama (sebelum setup account)
+    const firstOtpTrigger = this.page
+      .locator('button[data-bi-id="VerifyCode"]')
+      .or(
+        this.page.locator(
+          'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
+        )
+      )
+      .first();
+
     console.log(
       `[INFO] Detecting page state... URL: ${this.page.url()} | Title: ${await this.page.title().catch(() => 'N/A')}`
     );
@@ -780,19 +790,30 @@ class MicrosoftBot {
     }, 15000);
 
     try {
-      const winner = await this.runWithMonitor(
+      // Race: basicinfo form vs OTP trigger vs timeout
+      const winner = await Promise.race([
         basicInfoForm
           .waitFor({ state: 'visible', timeout: 15000 })
           .then(() => 'basicinfo')
           .catch(() => null),
-        15000
-      );
+        firstOtpTrigger
+          .waitFor({ state: 'visible', timeout: 15000 })
+          .then(() => 'first_otp')
+          .catch(() => null),
+        new Promise((r) => setTimeout(() => r('timeout'), 16000)),
+      ]);
 
       if (winner === 'basicinfo') {
         console.log('[INFO] Basic info form visible — setup button step will be skipped.');
         this._setupBtnReady = false;
+      } else if (winner === 'first_otp') {
+        // Verifikasi PERTAMA muncul — ambil email dari Mailporary lalu lanjut
+        console.log('[INFO] First OTP detected! Fetching email from Mailporary...');
+        await this.fetchNewEmailFromMailporary();
+        this._setupBtnReady = true;
+        return 'FIRST_OTP';
       } else {
-        // null = timeout — kemungkinan setup button perlu diklik, coba di step 7
+        // timeout — kemungkinan setup button perlu diklik, coba di step 7
         console.log(
           `[INFO] Basic info not yet visible. Setup button likely needed. URL: ${this.page.url()}`
         );
@@ -863,6 +884,7 @@ class MicrosoftBot {
       console.log(`[MAILPORARY] Email acquired: ${finalEmail}`);
       this.accountConfig.microsoftAccount.email = finalEmail;
       await this._logStep(
+        this._currentStep || 6,
         `📧 <b>${finalEmail}</b>: Email baru didapat: <code>${finalEmail}</code>`
       );
       return finalEmail;
@@ -924,7 +946,9 @@ class MicrosoftBot {
 
         // Klik tombol Actualiser (Refresh)
         const refreshBtn = mailporaryPage
-          .locator('button:has-text("Actualiser"), button:has-text("Refresh"), button:has-text("Update")')
+          .locator(
+            'button:has-text("Actualiser"), button:has-text("Refresh"), button:has-text("Update")'
+          )
           .first();
         if (await refreshBtn.isVisible()) {
           await refreshBtn.click();
@@ -995,121 +1019,115 @@ class MicrosoftBot {
   }
 
   async clickSetupAccountButton() {
-    this._isInSetupStep = true;
-    try {
-      // false = form biodata sudah langsung muncul, tidak perlu klik setup
-      if (this._setupBtnReady === false) {
-        console.log('[STEP 7] Setup skipped: basic info form already visible.');
-        return 'SUCCESS';
-      }
-
-      await this._logStep(7, 'Mengklik tombol Setup Account...');
-
-      // Close cookie popup if visible (France specific cookies dialog)
-      await this.handleCookiePopup();
-      const clicked = await this.clickButtonWithPossibleNames(
-        [
-          'Set up account',
-          'Setup Account',
-          'Setup',
-          'Set up',
-          'Siapkan akun',
-          'Atur Akun',
-          'Siapkan Akun',
-          'Atur',
-          'Siapkan',
-          'Create new account',
-          'Create account',
-          'Buat akun baru',
-          'Buat akun',
-          'Crear cuenta nueva',
-          'Crear cuenta',
-          'Créer un compte',
-          'Configuration',
-          'Configurer le compte',
-          'Neues Konto erstellen',
-          'Crea nuovo account',
-          'Criar nova conta',
-          'Mulai',
-        ],
-        {
-          // Exclude tombol yang ada hubungannya dengan cookie
-          excludeText: ['cookie', 'gérer', 'cookies', 'préférences', 'confidentialité'],
-        }
-      );
-
-      if (!clicked) {
-        console.warn('[STEP 7] Setup button not found — platform may have skipped it.');
-      }
-
-      // Wait for EITHER spinner to be gone OR OTP/Rate-limit triggers to appear.
-      // This is much faster than waiting for a slow spinner.
-      const otpTrigger = this.page
-        .locator('button[data-bi-id="VerifyCode"]')
-        .or(
-          this.page.locator(
-            'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
-          )
-        )
-        .first();
-
-      const rateLimitTrigger = this.page
-        .locator(
-          'text=/too many requests|reached the limit|jumlah permintaan terlalu tinggi|requêtes trop élevé/i'
-        )
-        .first();
-
-      const spinner = this.page.locator(SPINNER_SELECTOR).first();
-
-      console.log('[STEP 7] Waiting for page transition...');
-      const startTime = Date.now();
-      const waitTimeout = 20000;
-      while (Date.now() - startTime < waitTimeout) {
-        if (await otpTrigger.isVisible().catch(() => false)) break;
-        if (await rateLimitTrigger.isVisible().catch(() => false)) break;
-        if (!(await spinner.isVisible().catch(() => false))) {
-          await this.page.waitForTimeout(500);
-          if (!(await spinner.isVisible().catch(() => false))) break;
-        }
-        // Use checkForError manually for extra responsiveness
-        const err = await this.checkForError();
-        if (err && (err.includes('RATE_LIMIT_ERROR') || err.includes('OTP_DETECTED'))) break;
-
-        await this.page.waitForTimeout(500);
-      }
-
-      await this.page.waitForTimeout(1000);
-
-      // 1. Handle OTP (Verification Code)
-      if (await otpTrigger.isVisible({ timeout: 10000 }).catch(() => false)) {
-        console.log('[OTP] Verification code detected! Attempting to solve via Mailporary...');
-        const code = await this.readOtpFromMailporary();
-        if (code) {
-          const solved = await this.fillMicrosoftOtp(code);
-          if (solved) {
-            console.log('[OTP] Verification code solved successfully.');
-            return 'SUCCESS';
-          }
-        }
-        console.warn('[OTP] Could not solve OTP. Falling back to reset flow...');
-        await this.handleOtpWithMailporary();
-        return 'RETRY';
-      }
-
-      // 2. Handle Rate Limit
-      if (await rateLimitTrigger.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const msg = '[WARN] Rate-limit detected AFTER Setup Click! Resetting...';
-        console.warn(msg);
-        await this._logStep(7, msg);
-        await this.handleOtpWithMailporary();
-        return 'RETRY';
-      }
-
-      this._setupBtnReady = false;
+    // false = form biodata sudah langsung muncul, tidak perlu klik setup
+    if (this._setupBtnReady === false) {
+      console.log('[STEP 7] Setup skipped: basic info form already visible.');
       return 'SUCCESS';
-    } finally {
-      this._isInSetupStep = false;
     }
+
+    await this._logStep(7, 'Mengklik tombol Setup Account...');
+
+    // Close cookie popup if visible (France specific cookies dialog)
+    await this.handleCookiePopup();
+    const clicked = await this.clickButtonWithPossibleNames(
+      [
+        'Set up account',
+        'Setup Account',
+        'Setup',
+        'Set up',
+        'Siapkan akun',
+        'Atur Akun',
+        'Siapkan Akun',
+        'Atur',
+        'Siapkan',
+        'Create new account',
+        'Create account',
+        'Buat akun baru',
+        'Buat akun',
+        'Crear cuenta nueva',
+        'Crear cuenta',
+        'Créer un compte',
+        'Configuration',
+        'Configurer le compte',
+        'Neues Konto erstellen',
+        'Crea nuovo account',
+        'Criar nova conta',
+        'Mulai',
+      ],
+      {
+        // Exclude tombol yang ada hubungannya dengan cookie
+        excludeText: ['cookie', 'gérer', 'cookies', 'préférences', 'confidentialité'],
+      }
+    );
+
+    if (!clicked) {
+      console.warn('[STEP 7] Setup button not found — platform may have skipped it.');
+    }
+
+    // ── Tunggu: spinner hilang ATAU OTP/Rate-limit muncul ──────────────────
+    const secondOtpTrigger = this.page
+      .locator('button[data-bi-id="VerifyCode"]')
+      .or(
+        this.page.locator(
+          'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
+        )
+      )
+      .first();
+
+    const rateLimitTrigger = this.page
+      .locator(
+        'text=/too many requests|reached the limit|jumlah permintaan terlalu tinggi|requêtes trop élevé/i'
+      )
+      .first();
+
+    const spinner = this.page.locator(SPINNER_SELECTOR).first();
+
+    console.log('[STEP 7] Waiting for page transition after Setup click...');
+    const startTime = Date.now();
+    const waitTimeout = 20000;
+    while (Date.now() - startTime < waitTimeout) {
+      if (await secondOtpTrigger.isVisible().catch(() => false)) break;
+      if (await rateLimitTrigger.isVisible().catch(() => false)) break;
+      if (!(await spinner.isVisible().catch(() => false))) {
+        await this.page.waitForTimeout(500);
+        if (!(await spinner.isVisible().catch(() => false))) break;
+      }
+      const err = await this.checkForError();
+      if (err && err.includes('RATE_LIMIT_ERROR')) break;
+      await this.page.waitForTimeout(500);
+    }
+
+    await this.page.waitForTimeout(800);
+
+    // 1. Handle OTP Kedua → buka inbox Mailporary, ambil kode, isi
+    if (await secondOtpTrigger.isVisible({ timeout: 3000 }).catch(() => false)) {
+      console.log('[OTP] Second verification code detected! Reading from Mailporary inbox...');
+      const code = await this.readOtpFromMailporary();
+      if (code) {
+        const solved = await this.fillMicrosoftOtp(code);
+        if (solved) {
+          console.log('[OTP] Second verification code solved successfully. Continuing flow.');
+          await this.waitForSpinnerGone();
+          return 'SUCCESS';
+        }
+      }
+      // Gagal baca OTP → reset total
+      console.warn('[OTP] Could not solve second OTP. Falling back to reset flow...');
+      await this.handleOtpWithMailporary();
+      return 'RETRY';
+    }
+
+    // 2. Handle Rate Limit
+    if (await rateLimitTrigger.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const msg = '[WARN] Rate-limit detected AFTER Setup Click! Resetting...';
+      console.warn(msg);
+      await this._logStep(7, msg);
+      await this.handleOtpWithMailporary();
+      return 'RETRY';
+    }
+
+    this._setupBtnReady = false;
+    return 'SUCCESS';
   }
 
   async handleCookiePopup() {
@@ -2184,26 +2202,7 @@ class MicrosoftBot {
         }
       }
 
-      // 3. Cek OTP Trigger (Verification Code)
-      const otpTrigger = this.page
-        .locator('button[data-bi-id="VerifyCode"]')
-        .or(
-          this.page.locator(
-            'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
-          )
-        )
-        .first();
-
-      if (await otpTrigger.isVisible().catch(() => false)) {
-        // Jika sedang di Step 7, biarkan Step 7 yang menangani SOLVE.
-        // Jika di step lain (misal step 6), lempar error agar loop utama mereset (RETRY).
-        if (this._isInSetupStep) {
-          return null;
-        }
-        return 'OTP_DETECTED: Verification code page appeared unexpectedly.';
-      }
-
-      // 4. Cek pesan error validasi di field (data-automation-id common in Fluent UI)
+      // 3. Cek pesan error validasi di field (data-automation-id common in Fluent UI)
       const fieldError = this.page
         .locator(
           '[data-automation-id="error-message"], [role="alert"].error, .ms-MessageBar--error'
@@ -2373,11 +2372,27 @@ class MicrosoftBot {
 
           await this.executeStep('Filling email', () => this.fillEmail(), [1000, 2500]);
 
-          await this.executeStep(
+          const submitResult = await this.executeStep(
             'Submitting email & waiting for Setup',
             () => this.submitEmailAndWaitForSetup(),
             [400, 800]
           );
+
+          // FIRST_OTP: verifikasi pertama muncul, email sudah dicopy dari Mailporary
+          // Tidak perlu restart - lanjut isi ulang email lalu teruskan ke setup
+          if (submitResult === 'FIRST_OTP') {
+            console.log('[FIRST_OTP] Email copied from Mailporary, refilling and continuing...');
+            await this.executeStep(
+              'Filling email (after first OTP)',
+              () => this.fillEmail(),
+              [500, 1000]
+            );
+            await this.executeStep(
+              'Submitting email & waiting for Setup (retry)',
+              () => this.submitEmailAndWaitForSetup(),
+              [400, 800]
+            );
+          }
 
           const setupResult = await this.executeStep(
             'Clicking Setup Account button',
