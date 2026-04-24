@@ -750,7 +750,7 @@ class MicrosoftBot {
   }
 
   async submitEmailAndWaitForSetup() {
-    await this._logStep(6, 'Submit email & menunggu tombol Setup...');
+    await this._logStep(6, 'Submit email & menunggu transisi...');
     await this.clickButtonWithPossibleNames([
       'Next',
       'Selanjutnya',
@@ -760,68 +760,39 @@ class MicrosoftBot {
       'Nächste',
     ]);
 
-    // Tunggu spinner selesai dulu sebelum mendeteksi elemen berikutnya
+    // Tunggu spinner selesai (monitor captcha/error otomatis di sini)
     console.log('[INFO] Waiting for page to settle after email submit...');
     await this.waitForSpinnerGone(500);
 
-    console.log('[INFO] Detecting page state after email submit...');
-
-    // Deteksi form biodata (halaman langsung tampilkan form, skip setup button)
-    const basicInfoForm = this.page
-      .locator('input[id*="first" i], input[id*="fname" i], input[id*="firstName" i]')
-      .first();
-
-    // Deteksi verifikasi pertama (sebelum setup account)
-    const firstOtpTrigger = this.page
-      .locator('button[data-bi-id="VerifyCode"]')
-      .or(
-        this.page.locator(
-          'label:has-text("Verification code"), label:has-text("Kode verifikasi"), label:has-text("Code de vérification"), label:has-text("Entrez le code")'
-        )
-      )
-      .first();
-
-    console.log(
-      `[INFO] Detecting page state... URL: ${this.page.url()} | Title: ${await this.page.title().catch(() => 'N/A')}`
-    );
-    const start = Date.now();
-    const interval = setInterval(() => {
-      console.log(`[INFO] Still waiting page state... ${Math.round((Date.now() - start) / 1000)}s`);
-    }, 15000);
-
-    try {
-      // Race: basicinfo form vs OTP trigger vs timeout
-      const winner = await Promise.race([
-        basicInfoForm
-          .waitFor({ state: 'visible', timeout: 15000 })
-          .then(() => 'basicinfo')
-          .catch(() => null),
-        firstOtpTrigger
-          .waitFor({ state: 'visible', timeout: 15000 })
-          .then(() => 'first_otp')
-          .catch(() => null),
-        new Promise((r) => setTimeout(() => r('timeout'), 16000)),
-      ]);
-
-      if (winner === 'basicinfo') {
-        console.log('[INFO] Basic info form visible — setup button step will be skipped.');
-        this._setupBtnReady = false;
-      } else if (winner === 'first_otp') {
-        // Verifikasi PERTAMA muncul — ambil email dari Mailporary lalu lanjut
-        console.log('[INFO] First OTP detected! Fetching email from Mailporary...');
-        await this.fetchNewEmailFromMailporary();
-        this._setupBtnReady = true;
-        return 'FIRST_OTP';
-      } else {
-        // timeout — kemungkinan setup button perlu diklik, coba di step 7
-        console.log(
-          `[INFO] Basic info not yet visible. Setup button likely needed. URL: ${this.page.url()}`
-        );
-        this._setupBtnReady = true;
-      }
-    } finally {
-      clearInterval(interval);
-    }
+    // Tunggu tombol Setup muncul sebagai konfirmasi transisi halaman
+    const setupBtn = this.getGenericButton([
+      'Set up account',
+      'Setup Account',
+      'Setup',
+      'Set up',
+      'Siapkan akun',
+      'Atur Akun',
+      'Siapkan Akun',
+      'Atur',
+      'Siapkan',
+      'Create new account',
+      'Create account',
+      'Buat akun baru',
+      'Buat akun',
+      'Crear cuenta nueva',
+      'Crear cuenta',
+      'Créer un compte',
+      'Configuration',
+      'Configurer le compte',
+      'Neues Konto erstellen',
+      'Crea nuovo account',
+      'Criar nova conta',
+      'Mulai',
+    ]);
+    console.log('[INFO] Waiting for Setup Account button to appear...');
+    await setupBtn.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {
+      console.warn('[INFO] Setup Account button not visible yet, proceeding to Step 7 anyway.');
+    });
   }
 
   /**
@@ -1013,7 +984,6 @@ class MicrosoftBot {
       console.error('[OTP] Error filling code:', err.message);
       return false;
     }
-
   }
 
   async handleOtpWithMailporary() {
@@ -1031,12 +1001,6 @@ class MicrosoftBot {
   }
 
   async clickSetupAccountButton() {
-    // false = form biodata sudah langsung muncul, tidak perlu klik setup
-    if (this._setupBtnReady === false) {
-      console.log('[STEP 7] Setup skipped: basic info form already visible.');
-      return 'SUCCESS';
-    }
-
     await this._logStep(7, 'Mengklik tombol Setup Account...');
 
     // Close cookie popup if visible (France specific cookies dialog)
@@ -1131,7 +1095,9 @@ class MicrosoftBot {
         return 'RETRY';
       } else {
         // Email BUKAN dari Mailporary (email asli config) → ambil email baru dari Mailporary lalu reload
-        console.log('[OTP] Verification code detected but email is NOT from Mailporary. Fetching Mailporary email and restarting setup...');
+        console.log(
+          '[OTP] Verification code detected but email is NOT from Mailporary. Fetching Mailporary email and restarting setup...'
+        );
         await this.fetchNewEmailFromMailporary();
         // Reload halaman Microsoft agar retry dimulai dari halaman yang benar
         console.log('[OTP] Reloading Microsoft page for clean retry...');
@@ -2395,27 +2361,11 @@ class MicrosoftBot {
 
           await this.executeStep('Filling email', () => this.fillEmail(), [1000, 2500]);
 
-          const submitResult = await this.executeStep(
+          await this.executeStep(
             'Submitting email & waiting for Setup',
             () => this.submitEmailAndWaitForSetup(),
             [400, 800]
           );
-
-          // FIRST_OTP: verifikasi pertama muncul, email sudah dicopy dari Mailporary
-          // Tidak perlu restart - lanjut isi ulang email lalu teruskan ke setup
-          if (submitResult === 'FIRST_OTP') {
-            console.log('[FIRST_OTP] Email copied from Mailporary, refilling and continuing...');
-            await this.executeStep(
-              'Filling email (after first OTP)',
-              () => this.fillEmail(),
-              [500, 1000]
-            );
-            await this.executeStep(
-              'Submitting email & waiting for Setup (retry)',
-              () => this.submitEmailAndWaitForSetup(),
-              [400, 800]
-            );
-          }
 
           const setupResult = await this.executeStep(
             'Clicking Setup Account button',
