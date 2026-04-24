@@ -807,7 +807,8 @@ class MicrosoftBot {
    * Mengambil email baru dari Mailporary
    */
   async fetchNewEmailFromMailporary() {
-    await this._logStep(`📧 <b>${this.accountConfig.id}</b>: Membuka Mailporary untuk email baru...`);
+    const logEmail = this.accountConfig.microsoftAccount.email || 'New Account';
+    await this._logStep(`📧 <b>${logEmail}</b>: Membuka Mailporary untuk email baru...`);
     console.log('[MAILPORARY] Opening Mailporary to get email...');
 
     const mailporaryPage = await this.page.context().newPage();
@@ -847,7 +848,7 @@ class MicrosoftBot {
       console.log(`[MAILPORARY] Email acquired: ${finalEmail}`);
       this.accountConfig.microsoftAccount.email = finalEmail;
       await this._logStep(
-        `📧 <b>${this.accountConfig.id}</b>: Email baru didapat: <code>${finalEmail}</code>`
+        `📧 <b>${finalEmail}</b>: Email baru didapat: <code>${finalEmail}</code>`
       );
       return finalEmail;
     } finally {
@@ -859,7 +860,8 @@ class MicrosoftBot {
    * Membaca kode OTP dari Mailporary untuk email saat ini
    */
   async readOtpFromMailporary() {
-    await this._logStep(`🔍 <b>${this.accountConfig.id}</b>: Menunggu kode OTP di Mailporary...`);
+    const logEmail = this.accountConfig.microsoftAccount.email || 'Account';
+    await this._logStep(`🔍 <b>${logEmail}</b>: Menunggu kode OTP di Mailporary...`);
     console.log('[OTP] Waiting for verification code from Mailporary...');
 
     const mailporaryPage = await this.page.context().newPage();
@@ -964,10 +966,11 @@ class MicrosoftBot {
   async handleOtpWithMailporary() {
     await this.fetchNewEmailFromMailporary();
 
+    const logEmail = this.accountConfig.microsoftAccount.email || 'Account';
     // Refresh page Microsoft asli
     const refreshMsg = '[OTP] Refreshing Microsoft page for retry...';
     console.log(refreshMsg);
-    await this._logStep(`🔄 <b>${this.accountConfig.id}</b>: ${refreshMsg}`);
+    await this._logStep(`🔄 <b>${logEmail}</b>: ${refreshMsg}`);
     await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
 
     // Note: clickProductNextButton is now handled by the main run() loop retry logic
@@ -1019,10 +1022,8 @@ class MicrosoftBot {
       console.warn('[STEP 7] Setup button not found — platform may have skipped it.');
     }
 
-    await this.waitForSpinnerGone();
-    await this.page.waitForTimeout(1000);
-
-    // Cek apakah muncul OTP atau Error "Too many requests" setelah klik Setup
+    // Wait for EITHER spinner to be gone OR OTP/Rate-limit triggers to appear.
+    // This is much faster than waiting for a slow spinner.
     const otpTrigger = this.page
       .locator('button[data-bi-id="VerifyCode"]')
       .or(
@@ -1037,6 +1038,27 @@ class MicrosoftBot {
         'text=/too many requests|reached the limit|jumlah permintaan terlalu tinggi|requêtes trop élevé/i'
       )
       .first();
+
+    const spinner = this.page.locator(SPINNER_SELECTOR).first();
+
+    console.log('[STEP 7] Waiting for page transition...');
+    const startTime = Date.now();
+    const waitTimeout = 20000;
+    while (Date.now() - startTime < waitTimeout) {
+      if (await otpTrigger.isVisible().catch(() => false)) break;
+      if (await rateLimitTrigger.isVisible().catch(() => false)) break;
+      if (!(await spinner.isVisible().catch(() => false))) {
+        await this.page.waitForTimeout(500);
+        if (!(await spinner.isVisible().catch(() => false))) break;
+      }
+      // Use checkForError manually for extra responsiveness
+      const err = await this.checkForError();
+      if (err && err.includes('RATE_LIMIT_ERROR')) break;
+
+      await this.page.waitForTimeout(500);
+    }
+
+    await this.page.waitForTimeout(1000);
 
     // 1. Handle OTP (Verification Code)
     if (await otpTrigger.isVisible({ timeout: 10000 }).catch(() => false)) {
@@ -2148,14 +2170,12 @@ class MicrosoftBot {
       if (await fieldError.isVisible().catch(() => false)) {
         const msg = (await fieldError.innerText().catch(() => '')).trim();
         if (msg) {
-          // Jika error adalah "Too many requests", biarkan detector di step 7 yang menangani (reset Mailporary)
           if (
             /requêtes trop élevé|too many requests|reached the limit|jumlah permintaan terlalu tinggi/i.test(
               msg
             )
           ) {
-            console.log(`[INFO] Ignoring rate-limit error in global monitor to allow reset logic.`);
-            return null;
+            return `RATE_LIMIT_ERROR: ${msg}`;
           }
           return `Validation/UI Error: ${msg}`;
         }
@@ -2298,38 +2318,53 @@ class MicrosoftBot {
 
       while (!setupDone && setupAttempts < MAX_SETUP_RETRIES) {
         setupAttempts++;
-        if (setupAttempts > 1) {
-          console.log(`[RETRY] Starting setup retry attempt #${setupAttempts}...`);
-        }
+        try {
+          if (setupAttempts > 1) {
+            console.log(`[RETRY] Starting setup retry attempt #${setupAttempts}...`);
+          }
 
-        await this.executeStep(
-          'Clicking product page Next',
-          () => this.clickProductNextButton(),
-          [300, 600]
-        );
-
-        await this.executeStep('Filling email', () => this.fillEmail(), [1000, 2500]);
-
-        await this.executeStep(
-          'Submitting email & waiting for Setup',
-          () => this.submitEmailAndWaitForSetup(),
-          [400, 800]
-        );
-
-        const setupResult = await this.executeStep(
-          'Clicking Setup Account button',
-          () => this.clickSetupAccountButton(),
-          [400, 800]
-        );
-
-        if (setupResult === 'RETRY') {
-          console.log(
-            `[RETRY] OTP/Rate-limit hit on attempt ${setupAttempts}. Flow restarted with new email.`
+          await this.executeStep(
+            'Clicking product page Next',
+            () => this.clickProductNextButton(),
+            [300, 600]
           );
-          continue;
-        }
 
-        setupDone = true;
+          await this.executeStep('Filling email', () => this.fillEmail(), [1000, 2500]);
+
+          await this.executeStep(
+            'Submitting email & waiting for Setup',
+            () => this.submitEmailAndWaitForSetup(),
+            [400, 800]
+          );
+
+          const setupResult = await this.executeStep(
+            'Clicking Setup Account button',
+            () => this.clickSetupAccountButton(),
+            [400, 800]
+          );
+
+          if (setupResult === 'RETRY') {
+            console.log(
+              `[RETRY] OTP/Rate-limit hit on attempt ${setupAttempts}. Flow restarted with new email.`
+            );
+            continue;
+          }
+
+          setupDone = true;
+        } catch (err) {
+          if (
+            err.message.includes('RATE_LIMIT_ERROR') ||
+            err.message.includes('CAPTCHA') ||
+            err.message.includes('715-123280')
+          ) {
+            console.log(
+              `[RETRY] Recoverable error detected: ${err.message}. Retrying setup phase...`
+            );
+            await this.handleOtpWithMailporary();
+            continue;
+          }
+          throw err;
+        }
       }
 
       if (!setupDone) {
