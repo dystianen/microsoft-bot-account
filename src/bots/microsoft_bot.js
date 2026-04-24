@@ -1130,9 +1130,12 @@ class MicrosoftBot {
         await this.handleOtpWithMailporary();
         return 'RETRY';
       } else {
-        // Email BUKAN dari Mailporary (email asli config) → ambil email baru dari Mailporary dulu
+        // Email BUKAN dari Mailporary (email asli config) → ambil email baru dari Mailporary lalu reload
         console.log('[OTP] Verification code detected but email is NOT from Mailporary. Fetching Mailporary email and restarting setup...');
         await this.fetchNewEmailFromMailporary();
+        // Reload halaman Microsoft agar retry dimulai dari halaman yang benar
+        console.log('[OTP] Reloading Microsoft page for clean retry...');
+        await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
         return 'RETRY';
       }
     }
