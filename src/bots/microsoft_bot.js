@@ -2402,14 +2402,32 @@ class MicrosoftBot {
 
           setupDone = true;
         } catch (err) {
+          const msg = err.message || '';
+
+          // Handle Captcha: Ambil email baru & reload
+          if (msg.includes('CAPTCHA_DETECTED') || msg.includes('Protecting your account')) {
+            const warnMsg =
+              '[CAPTCHA] Protecting your account detected. Switching to new Mailporary email...';
+            console.warn(warnMsg);
+            await this._logStep(this.currentStep, warnMsg);
+            await this.fetchNewEmailFromMailporary();
+            await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
+            continue;
+          }
+
+          // Handle OTP Switch (dari submitEmailAndWaitForSetup)
+          if (msg.includes('FIRST_STAGE_OTP_SWITCH')) {
+            console.log('[OTP] Reloading page to use new Mailporary email...');
+            await this.page.reload({ waitUntil: 'domcontentloaded', timeout: HARD_TIMEOUT });
+            continue;
+          }
+
           if (
-            err.message.includes('RATE_LIMIT_ERROR') ||
-            err.message.includes('CAPTCHA') ||
-            err.message.includes('715-123280')
+            msg.includes('RATE_LIMIT_ERROR') ||
+            msg.includes('715-123280') ||
+            msg.includes('CAPTCHA')
           ) {
-            console.log(
-              `[RETRY] Recoverable error detected: ${err.message}. Retrying setup phase...`
-            );
+            console.log(`[RETRY] Recoverable error detected: ${msg}. Retrying setup phase...`);
             await this.handleOtpWithMailporary();
             continue;
           }
