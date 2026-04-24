@@ -825,7 +825,14 @@ class MicrosoftBot {
       await mailporaryPage.waitForFunction(
         () => {
           const input = document.querySelector('input[aria-label="Email Address"]');
-          return input && input.value && input.value.includes('@');
+          // Tambah check: bukan string "loading", punya domain valid, minimal ada titik setelah @
+          return (
+            input &&
+            input.value &&
+            input.value.includes('@') &&
+            !input.value.toLowerCase().includes('loading') &&
+            input.value.split('@')[1]?.includes('.')
+          );
         },
         { timeout: HARD_TIMEOUT }
       );
@@ -947,7 +954,7 @@ class MicrosoftBot {
     const MAX_WAIT_MS = 3000; // Dikurangi agar tidak kelamaan kalau memang tidak ada
     const CHECK_INTERVAL = 500;
     const elapsed = { val: 0 };
-    
+
     console.log('[COOKIE] Checking for cookie popup...');
 
     // Poll sampai popup muncul atau timeout
