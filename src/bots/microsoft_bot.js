@@ -2008,6 +2008,7 @@ class MicrosoftBot {
       "commencer l'essai",
       "essayer l'essai",
       "Démarrer l'essai",
+      "Démarrer l`essai",
       'try now',
       'coba sekarang',
       'essayer maintenant',
